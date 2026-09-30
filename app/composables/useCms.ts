@@ -3,9 +3,13 @@ import type {
   FooterLinkData,
   HomeHeroData,
   HomeSectionData,
+  PageEntry,
   SiteFooterData,
   SiteHeaderData,
 } from '~~/.eldra/web-studio';
+
+/** Page depth: blocks arrive resolved, deeper references resolve lazily in BlocksRenderer. */
+const PAGE_DEPTH = 2;
 
 /** CMS content is optional decoration: a missing schema, entry or failure yields nothing, never an error page. */
 export function useCms() {
@@ -49,5 +53,18 @@ export function useCms() {
     return (await list('site_header'))[0]?.data ?? null;
   }
 
-  return { header, hero, sections, footer };
+  async function page(slug: string): Promise<PageEntry<typeof PAGE_DEPTH> | null> {
+    try {
+      return await eldra.cms.getEntryByUniqueField('page', 'slug', slug, {
+        locale: locale.value,
+        depth: PAGE_DEPTH,
+      });
+    } catch (err) {
+      // An unknown slug is the ordinary 404 path; anything else is logged and still a 404.
+      if (!isNotFound(err)) console.warn(`[cms] page "${slug}" could not be read`, err);
+      return null;
+    }
+  }
+
+  return { header, hero, sections, footer, page };
 }

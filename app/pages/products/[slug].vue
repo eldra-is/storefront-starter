@@ -84,7 +84,17 @@ async function addToCart() {
   }
 }
 
-useSeoMeta({ title: () => product.value?.title ?? '' });
+const seo = computed(() =>
+  buildSeoMeta({ title: product.value?.title }, { image: gallery.value[0]?.url })
+);
+useSeoMeta({
+  title: () => seo.value.title,
+  description: () => seo.value.description,
+  ogTitle: () => seo.value.ogTitle,
+  ogDescription: () => seo.value.ogDescription,
+  ogImage: () => seo.value.ogImage,
+  twitterCard: () => seo.value.twitterCard,
+});
 </script>
 
 <template>
