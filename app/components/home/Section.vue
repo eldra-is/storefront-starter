@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import type { HomeSectionData } from '~~/.eldra/web-studio';
 
-defineProps<{
+const { section } = defineProps<{
   section: HomeSectionData<1>;
   flip?: boolean;
 }>();
+
+// CMS content: a link with an unsafe scheme (javascript:, data:) renders no call to action.
+const ctaLink = computed(() => safeHref(section.ctaLink));
 </script>
 
 <template>
@@ -30,8 +33,8 @@ defineProps<{
         </h2>
         <ContentRichText v-if="section.body" :node="section.body" />
         <NuxtLink
-          v-if="section.ctaLink && section.ctaText"
-          :to="section.ctaLink"
+          v-if="ctaLink && section.ctaText"
+          :to="ctaLink"
           class="border-ink bg-paper text-ink hover:bg-ink hover:text-paper inline-flex min-h-11 items-center justify-center border px-6 text-[11px] tracking-[0.14em] uppercase transition-colors duration-150"
         >
           {{ section.ctaText }}

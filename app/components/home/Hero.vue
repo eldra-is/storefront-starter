@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { HomeHeroData } from '~~/.eldra/web-studio';
 
-defineProps<{ hero: HomeHeroData }>();
+const { hero } = defineProps<{ hero: HomeHeroData }>();
+
+// CMS content: a link with an unsafe scheme (javascript:, data:) renders no call to action.
+const ctaLink = computed(() => safeHref(hero.ctaLink));
 </script>
 
 <template>
@@ -27,8 +30,8 @@ defineProps<{ hero: HomeHeroData }>();
         {{ hero.subtitle }}
       </p>
       <NuxtLink
-        v-if="hero.ctaLink && hero.ctaText"
-        :to="hero.ctaLink"
+        v-if="ctaLink && hero.ctaText"
+        :to="ctaLink"
         class="border-paper bg-paper text-ink hover:text-paper mt-7 inline-flex min-h-11 items-center justify-center border px-6 text-[11px] tracking-[0.14em] uppercase transition-colors duration-150 hover:bg-transparent"
       >
         {{ hero.ctaText }}

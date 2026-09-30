@@ -4,8 +4,10 @@ import type { BlockImageEntry } from '~~/.eldra/web-studio';
 const { item, priority = false } = defineProps<{ item: BlockImageEntry; priority?: boolean }>();
 
 const asset = computed(() => item.data.image?.[0]);
-const link = computed(() => item.data.link?.trim() ?? '');
+// CMS content: a link with an unsafe scheme (javascript:, data:) leaves the image unlinked.
+const link = computed(() => safeHref(item.data.link) ?? '');
 const isExternal = computed(() => isExternalHref(link.value));
+const newTab = computed(() => opensInNewTab(link.value));
 const alt = computed(() => (item.data.decorative ? '' : undefined));
 </script>
 
@@ -15,8 +17,8 @@ const alt = computed(() => (item.data.decorative ? '' : undefined));
       v-if="link"
       :to="link"
       :external="isExternal"
-      :target="isExternal ? '_blank' : undefined"
-      :rel="isExternal ? 'noopener noreferrer' : undefined"
+      :target="newTab ? '_blank' : undefined"
+      :rel="newTab ? 'noopener noreferrer' : undefined"
     >
       <ContentMedia
         :asset="asset"

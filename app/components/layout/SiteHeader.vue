@@ -16,8 +16,9 @@ const { data: header } = await useAsyncData(
   () => useCms().header()
 );
 
+// Its own key: the shop page loads the same categories with a handler that lets a failure through.
 const { data: categories } = await useAsyncData(
-  () => `categories:${locale.value}`,
+  () => `site-header-categories:${locale.value}`,
   async () => {
     try {
       return await useCatalog().listCategories();
@@ -29,16 +30,21 @@ const { data: categories } = await useAsyncData(
 );
 
 const logo = computed(() => header.value?.logo?.[0] ?? null);
+// CMS content: an item whose href has an unsafe scheme (javascript:, data:) is left out.
 const configuredNavigation = computed<HeaderNavigationItem[]>(() =>
-  (header.value?.items ?? [])
-    .filter((item) => item.data.active !== false)
-    .map((item) => ({
-      id: item.id,
-      label: item.data.label,
-      href: item.data.href,
-      kind: item.data.kind.value,
-      openInNewTab: item.data.openInNewTab === true,
-    }))
+  (header.value?.items ?? []).flatMap((item) => {
+    const href = safeHref(item.data.href);
+    if (item.data.active === false || !href) return [];
+    return [
+      {
+        id: item.id,
+        label: item.data.label,
+        href,
+        kind: item.data.kind.value,
+        openInNewTab: item.data.openInNewTab === true,
+      },
+    ];
+  })
 );
 const fallbackNavigation = computed<HeaderNavigationItem[]>(() => [
   {
@@ -84,12 +90,8 @@ watch(
   }
 );
 
-function isExternal(href: string) {
-  return /^(?:[a-z]+:)?\/\//i.test(href) || href.startsWith('mailto:') || href.startsWith('tel:');
-}
-
 function isNavigationItemActive(item: HeaderNavigationItem) {
-  if (isExternal(item.href)) return false;
+  if (isExternalHref(item.href)) return false;
   if (item.kind === 'catalog-menu') return route.path === '/shop';
   return route.path === item.href || route.path.startsWith(`${item.href}/`);
 }
@@ -204,7 +206,7 @@ function switchLocale() {
         @keydown.esc="catalogMenuOpenId = null"
       >
         <a
-          v-if="isExternal(item.href) || item.openInNewTab"
+          v-if="isExternalHref(item.href) || item.openInNewTab"
           class="hover:border-ink border-b pb-0.5 text-[11px] tracking-[0.14em] uppercase"
           :class="isNavigationItemActive(item) ? 'border-ink' : 'border-transparent'"
           :href="item.href"

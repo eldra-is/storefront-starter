@@ -10,20 +10,26 @@ const { data } = await useAsyncData(
   { default: () => ({ links: [] as FooterLinkData[], footer: null }) }
 );
 
+interface FooterLink {
+  label: string;
+  href: string;
+}
+
 const columns = computed(() => {
-  const groups = new Map<string, { label: string; links: FooterLinkData[] }>();
+  const groups = new Map<string, { label: string; links: FooterLink[] }>();
   for (const link of data.value.links) {
+    // CMS content: a link whose href has an unsafe scheme (javascript:, data:) is left out.
+    const href = safeHref(link.href);
+    if (!href) continue;
     // An organization without commerce has no shop pages to link to.
-    if (!organization.value.commerce && isCommercePath(link.href ?? '')) continue;
+    if (!organization.value.commerce && isCommercePath(href)) continue;
     const column = link.column ?? { value: 'shop', label: 'Shop' };
     const group = groups.get(column.value) ?? { label: column.label, links: [] };
-    group.links.push(link);
+    group.links.push({ label: link.label, href });
     groups.set(column.value, group);
   }
   return [...groups.values()];
 });
-
-const isExternal = (href?: string) => /^(https?:|mailto:)/.test(href ?? '');
 </script>
 
 <template>
@@ -40,12 +46,12 @@ const isExternal = (href?: string) => /^(https?:|mailto:)/.test(href ?? '');
           {{ column.label }}
         </p>
         <ul class="m-0 grid list-none gap-2.5 p-0">
-          <li v-for="link in column.links" :key="link.href ?? link.label">
+          <li v-for="link in column.links" :key="`${link.label}:${link.href}`">
             <a
-              v-if="isExternal(link.href)"
+              v-if="isExternalHref(link.href)"
               :href="link.href"
-              target="_blank"
-              rel="noopener noreferrer"
+              :target="opensInNewTab(link.href) ? '_blank' : undefined"
+              :rel="opensInNewTab(link.href) ? 'noopener noreferrer' : undefined"
               class="hover:text-accent inline-flex"
               >{{ link.label }}</a
             >
