@@ -44,11 +44,26 @@ export const useCartStore = defineStore('cart', () => {
     try {
       cart.value = await eldra.cart.get(cartId.value, { locale: locale.value });
     } catch (err) {
-      if (isCartNotFound(err)) forgetCart();
+      // Reading the cart by id: any not-found answer can only mean the cart.
+      if (isNotFound(err)) forgetCart();
     }
   }
 
-  async function addItem(productId: string, variantId: string, quantity: number): Promise<void> {
+  /** Forgets the stored cart when a failed mutation means the server no longer has it. */
+  async function forgetIfGone(err: unknown): Promise<boolean> {
+    const id = cartId.value;
+    if (!id) return false;
+    const gone = await isCartGone(err, () => eldra.cart.get(id, { locale: locale.value }));
+    if (gone && cartId.value === id) forgetCart();
+    return gone;
+  }
+
+  async function addItem(
+    productId: string,
+    variantId: string,
+    quantity: number,
+    retried = false
+  ): Promise<void> {
     lastError.value = null;
     let result: EldraCart;
     try {
@@ -59,10 +74,10 @@ export const useCartStore = defineStore('cart', () => {
         ...(cartId.value ? { cartId: cartId.value } : {}),
       });
     } catch (err) {
-      // The server refuses an unknown cart id rather than reviving it; start a fresh cart.
-      if (isCartNotFound(err) && cartId.value) {
-        forgetCart();
-        return addItem(productId, variantId, quantity);
+      // The server refuses an unknown cart id rather than reviving it; start a fresh cart, once.
+      // A missing product or variant also answers not found, so the cart is only dropped when gone.
+      if (!retried && (await forgetIfGone(err))) {
+        return addItem(productId, variantId, quantity, true);
       }
       if (isOutOfStock(err)) lastError.value = 'INSUFFICIENT_STOCK';
       throw err;
@@ -75,16 +90,25 @@ export const useCartStore = defineStore('cart', () => {
     drawerOpen.value = true;
   }
 
+  /** Runs a mutation on the stored cart; a failure that means the cart is gone forgets it, then rethrows. */
+  async function mutate(run: (id: string) => Promise<unknown>): Promise<void> {
+    if (!cartId.value) return;
+    try {
+      await run(cartId.value);
+    } catch (err) {
+      await forgetIfGone(err);
+      throw err;
+    }
+  }
+
   // Mutations answer with the unlocalised cart, so state is always set by the localised read.
   async function updateQuantity(itemId: string, quantity: number): Promise<void> {
-    if (!cartId.value) return;
-    await eldra.cart.updateItem(cartId.value, itemId, { quantity });
+    await mutate((id) => eldra.cart.updateItem(id, itemId, { quantity }));
     await loadCart();
   }
 
   async function removeItem(itemId: string): Promise<void> {
-    if (!cartId.value) return;
-    await eldra.cart.removeItem(cartId.value, itemId);
+    await mutate((id) => eldra.cart.removeItem(id, itemId));
     await loadCart();
   }
 
@@ -105,8 +129,9 @@ export const useCartStore = defineStore('cart', () => {
   }
 
   async function removeDiscount(): Promise<void> {
-    if (!cartId.value) return;
-    cart.value = await eldra.cart.removeDiscount(cartId.value, { locale: locale.value });
+    await mutate(async (id) => {
+      cart.value = await eldra.cart.removeDiscount(id, { locale: locale.value });
+    });
   }
 
   // Replayed through add-to-cart so every item is re-priced and re-stocked.
@@ -156,5 +181,6 @@ export const useCartStore = defineStore('cart', () => {
     applyDiscount,
     removeDiscount,
     recoverBasket,
+    forgetCart,
   };
 });

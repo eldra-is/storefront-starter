@@ -78,7 +78,7 @@ async function addToCart() {
     added.value = true;
   } catch {
     addError.value =
-      cartStore.lastError === 'INSUFFICIENT_STOCK' ? t('notEnoughStock') : t('codeRejected');
+      cartStore.lastError === 'INSUFFICIENT_STOCK' ? t('notEnoughStock') : t('addFailed');
   } finally {
     adding.value = false;
   }

@@ -1,6 +1,12 @@
 import { EldraHttpError } from '@eldrajs/sdk';
-import { describe, expect, it } from 'vitest';
-import { errorIdOf, isCartNotFound, isNotFound, isOutOfStock } from '../../app/utils/errors';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  errorIdOf,
+  isCartGone,
+  isCartNotFound,
+  isNotFound,
+  isOutOfStock,
+} from '../../app/utils/errors';
 
 const problem = (status: number, code: string, errorId?: string) =>
   new EldraHttpError(new Response(null, { status }), { code, ...(errorId ? { errorId } : {}) });
@@ -20,9 +26,54 @@ describe('SDK error helpers', () => {
 
   it('recognizes a forgotten cart and an out-of-stock add', () => {
     expect(isCartNotFound(problem(404, 'NOT_FOUND', 'CART_NOT_FOUND'))).toBe(true);
-    expect(isCartNotFound(problem(404, 'NOT_FOUND'))).toBe(true);
     expect(isOutOfStock(problem(409, 'CONFLICT', 'CART_INSUFFICIENT_STOCK'))).toBe(true);
     expect(isOutOfStock(problem(409, 'CONFLICT'))).toBe(true);
     expect(isOutOfStock(problem(404, 'NOT_FOUND', 'CART_NOT_FOUND'))).toBe(false);
+  });
+
+  it('does not mistake a missing product or variant for a forgotten cart', () => {
+    expect(isCartNotFound(problem(404, 'NOT_FOUND'))).toBe(false);
+    expect(isCartNotFound(problem(404, 'NOT_FOUND', 'VARIANT_NOT_FOUND'))).toBe(false);
+    expect(isCartNotFound(problem(404, 'NOT_FOUND', 'PRODUCT_NOT_FOUND'))).toBe(false);
+    expect(isCartNotFound(new Error('Cart not found'))).toBe(false);
+  });
+});
+
+describe('isCartGone', () => {
+  const cartMissing = () => Promise.reject(problem(404, 'NOT_FOUND', 'CART_NOT_FOUND'));
+  const cartThere = () => Promise.resolve({ id: 'cart-1' });
+
+  it('trusts CART_NOT_FOUND without reading the cart', async () => {
+    const readCart = vi.fn(cartThere);
+    expect(await isCartGone(problem(404, 'NOT_FOUND', 'CART_NOT_FOUND'), readCart)).toBe(true);
+    expect(readCart).not.toHaveBeenCalled();
+  });
+
+  it('keeps a live cart when a bare NOT_FOUND was about a product or variant', async () => {
+    const readCart = vi.fn(cartThere);
+    expect(await isCartGone(problem(404, 'NOT_FOUND'), readCart)).toBe(false);
+    expect(readCart).toHaveBeenCalledOnce();
+  });
+
+  it('confirms a bare NOT_FOUND when the cart read is also not found', async () => {
+    expect(await isCartGone(problem(404, 'NOT_FOUND'), cartMissing)).toBe(true);
+    expect(
+      await isCartGone(problem(404, 'NOT_FOUND'), () => Promise.reject(problem(404, 'NOT_FOUND')))
+    ).toBe(true);
+  });
+
+  it('keeps the cart when the confirming read fails for another reason', async () => {
+    expect(
+      await isCartGone(problem(404, 'NOT_FOUND'), () => Promise.reject(problem(503, 'UNAVAILABLE')))
+    ).toBe(false);
+  });
+
+  it('never reads the cart for stock or other failures', async () => {
+    const readCart = vi.fn(cartMissing);
+    expect(await isCartGone(problem(409, 'CONFLICT', 'CART_INSUFFICIENT_STOCK'), readCart)).toBe(
+      false
+    );
+    expect(await isCartGone(new Error('offline'), readCart)).toBe(false);
+    expect(readCart).not.toHaveBeenCalled();
   });
 });

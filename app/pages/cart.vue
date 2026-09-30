@@ -16,9 +16,13 @@ onMounted(async () => {
   }
   recovering.value = true;
   try {
-    const { restored, missing } = await cartStore.recoverBasket(token);
-    if (restored > 0) notice.value = missing > 0 ? t('basketPartial') : t('basketRestored');
-    else notice.value = t('linkExpired');
+    const outcome = recoveryOutcome(await cartStore.recoverBasket(token));
+    notice.value =
+      outcome === 'restored'
+        ? t('basketRestored')
+        : outcome === 'partial'
+          ? t('basketPartial')
+          : t('linkExpired');
   } finally {
     recovering.value = false;
     await router.replace({ query: {} });
@@ -45,9 +49,35 @@ async function applyCode() {
   }
 }
 
+const lineError = ref('');
+
+/**
+ * A failed change re-reads the cart so the lines match the server. 409 is out of stock; a cart the
+ * server has forgotten was already dropped by the store, which leaves the empty-cart view.
+ */
+async function changeCart(action: () => Promise<void>): Promise<string> {
+  try {
+    await action();
+    return '';
+  } catch (err) {
+    await cartStore.loadCart();
+    if (isOutOfStock(err)) return t('notEnoughStock');
+    return cartStore.cartId ? t('cartUpdateFailed') : '';
+  }
+}
+
 async function setQuantity(itemId: string, quantity: number) {
-  if (quantity < 1) await cartStore.removeItem(itemId);
-  else await cartStore.updateQuantity(itemId, quantity);
+  lineError.value = await changeCart(() =>
+    quantity < 1 ? cartStore.removeItem(itemId) : cartStore.updateQuantity(itemId, quantity)
+  );
+}
+
+async function removeLine(itemId: string) {
+  lineError.value = await changeCart(() => cartStore.removeItem(itemId));
+}
+
+async function removeCode() {
+  codeError.value = await changeCart(() => cartStore.removeDiscount());
 }
 
 useSeoMeta({ title: () => t('cart') });
@@ -76,69 +106,79 @@ useSeoMeta({ title: () => t('cart') });
         </NuxtLink>
       </div>
       <div v-else class="mt-10 grid gap-12 min-[900px]:grid-cols-[7fr_4fr] min-[900px]:gap-16">
-        <ul class="border-rule m-0 list-none border-t p-0" data-testid="cart-lines">
-          <li
-            v-for="item in items"
-            :key="item.id"
-            class="border-rule grid grid-cols-[96px_1fr_auto] gap-5 border-b py-6"
-            :data-testid="`cart-line-${item.variantId}`"
+        <div>
+          <p
+            v-if="lineError"
+            class="text-accent mb-4 text-xs"
+            role="alert"
+            data-testid="cart-line-error"
           >
-            <div class="bg-soft aspect-[4/5]">
-              <img
-                v-if="item.thumbnail?.url"
-                :src="item.thumbnail.url"
-                :alt="item.title"
-                class="h-full w-full object-cover"
-              />
-            </div>
-            <div>
-              <p class="text-xs tracking-[0.06em] uppercase" data-testid="cart-line-title">
-                {{ item.title }}
-              </p>
-              <p class="text-muted mt-1 text-xs">
-                {{
-                  (item.optionSnapshots ?? [])
-                    .map((o) => o.optionValueName ?? o.optionValueKey)
-                    .join(' · ')
-                }}
-              </p>
-              <div class="mt-4 flex items-center gap-5">
-                <div class="border-ink inline-flex border" :aria-label="t('quantity')">
+            {{ lineError }}
+          </p>
+          <ul class="border-rule m-0 list-none border-t p-0" data-testid="cart-lines">
+            <li
+              v-for="item in items"
+              :key="item.id"
+              class="border-rule grid grid-cols-[96px_1fr_auto] gap-5 border-b py-6"
+              :data-testid="`cart-line-${item.variantId}`"
+            >
+              <div class="bg-soft aspect-[4/5]">
+                <img
+                  v-if="item.thumbnail?.url"
+                  :src="item.thumbnail.url"
+                  :alt="item.title"
+                  class="h-full w-full object-cover"
+                />
+              </div>
+              <div>
+                <p class="text-xs tracking-[0.06em] uppercase" data-testid="cart-line-title">
+                  {{ item.title }}
+                </p>
+                <p class="text-muted mt-1 text-xs">
+                  {{
+                    (item.optionSnapshots ?? [])
+                      .map((o) => o.optionValueName ?? o.optionValueKey)
+                      .join(' · ')
+                  }}
+                </p>
+                <div class="mt-4 flex items-center gap-5">
+                  <div class="border-ink inline-flex border" :aria-label="t('quantity')">
+                    <button
+                      type="button"
+                      class="h-9 w-9"
+                      :data-testid="`cart-dec-${item.variantId}`"
+                      @click="setQuantity(item.id, item.quantity - 1)"
+                    >
+                      −
+                    </button>
+                    <span
+                      class="w-9 text-center leading-9"
+                      :data-testid="`cart-qty-${item.variantId}`"
+                      >{{ item.quantity }}</span
+                    >
+                    <button
+                      type="button"
+                      class="h-9 w-9"
+                      :data-testid="`cart-inc-${item.variantId}`"
+                      @click="setQuantity(item.id, item.quantity + 1)"
+                    >
+                      +
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    class="h-9 w-9"
-                    :data-testid="`cart-dec-${item.variantId}`"
-                    @click="setQuantity(item.id, item.quantity - 1)"
+                    class="border-b border-current text-[11px] tracking-[0.14em] uppercase"
+                    :data-testid="`cart-remove-${item.variantId}`"
+                    @click="removeLine(item.id)"
                   >
-                    −
-                  </button>
-                  <span
-                    class="w-9 text-center leading-9"
-                    :data-testid="`cart-qty-${item.variantId}`"
-                    >{{ item.quantity }}</span
-                  >
-                  <button
-                    type="button"
-                    class="h-9 w-9"
-                    :data-testid="`cart-inc-${item.variantId}`"
-                    @click="setQuantity(item.id, item.quantity + 1)"
-                  >
-                    +
+                    {{ t('remove') }}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  class="border-b border-current text-[11px] tracking-[0.14em] uppercase"
-                  :data-testid="`cart-remove-${item.variantId}`"
-                  @click="cartStore.removeItem(item.id)"
-                >
-                  {{ t('remove') }}
-                </button>
               </div>
-            </div>
-            <p class="text-[13px]">{{ price(item.price * item.quantity, currency) }}</p>
-          </li>
-        </ul>
+              <p class="text-[13px]">{{ price(item.price * item.quantity, currency) }}</p>
+            </li>
+          </ul>
+        </div>
         <aside class="sticky top-[calc(var(--header-h)+24px)] self-start">
           <form @submit.prevent="applyCode">
             <label class="mb-2.5 block text-[11px] tracking-[0.14em] uppercase" for="discount-code">
@@ -153,7 +193,7 @@ useSeoMeta({ title: () => t('cart') });
                 type="button"
                 class="border-b border-current text-[11px] tracking-[0.14em] uppercase"
                 data-testid="cart-discount-remove"
-                @click="cartStore.removeDiscount()"
+                @click="removeCode()"
               >
                 {{ t('remove') }}
               </button>
