@@ -205,10 +205,9 @@ describe('cms/content-model.eldra.json', () => {
     const count = (apiId: string) =>
       manifest.entries.filter((e) => e.schemaRef === `schema:${apiId}`).length;
     expect(count('site_header')).toBe(1);
-    expect(
-      (manifest.entries.find((e) => e.ref === 'entry:site_header:primary')?.data.items as unknown[])
-        .length
-    ).toBe(3);
+    const primaryHeader = manifest.entries.find((e) => e.ref === 'entry:site_header:primary');
+    expect(primaryHeader).toBeDefined();
+    expect((primaryHeader!.data.items as unknown[]).length).toBe(3);
     expect(count('site_footer')).toBe(1);
     expect(count('home_hero')).toBe(1);
     expect(count('home_section')).toBe(2);
