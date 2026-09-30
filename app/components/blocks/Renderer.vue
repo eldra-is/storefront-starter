@@ -18,7 +18,8 @@ const { block, priority = false } = defineProps<{ block: RenderableBlock; priori
 const { locale } = useLocale();
 const parent = inject(resolutionContextKey, null);
 const depthLevelIndex = parent?.depthLevelIndex ?? 0;
-// One map per page render: two blocks referencing the same entry share one request.
+// One map per top-level block and its subtree (each block the page renders directly starts its own):
+// two blocks under the same top-level block that reference the same entry share one request.
 const resolvedRequests =
   parent?.resolvedRequests ?? new Map<string, Promise<RenderableBlock | null>>();
 const ancestorIds = parent?.ancestorIds ?? new Set<string>();

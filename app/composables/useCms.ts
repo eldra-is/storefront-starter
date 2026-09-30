@@ -34,9 +34,10 @@ export function useCms() {
     return (await list('home_hero'))[0]?.data ?? null;
   }
 
-  async function sections(): Promise<HomeSectionData<1>[]> {
+  /** Active sections in order, each carrying its entry id for a stable list key. */
+  async function sections(): Promise<(HomeSectionData<1> & { id: string })[]> {
     return (await list('home_section'))
-      .map((e) => e.data)
+      .map((e) => ({ ...e.data, id: e.id }))
       .filter((s) => s.active !== false)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }

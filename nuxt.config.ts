@@ -62,10 +62,8 @@ export default defineNuxtConfig({
     head: {
       title: 'Storefront Starter',
       htmlAttrs: { lang: 'en' },
-      meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'robots', content: env.siteIndexable ? 'index, follow' : 'noindex, nofollow' },
-      ],
+      // robots is set in app.vue from runtime config, so NUXT_PUBLIC_SITE_INDEXABLE works after a build.
+      meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
     },
   },
 });

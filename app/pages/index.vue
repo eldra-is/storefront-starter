@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { locale, t } = useLocale();
 const organization = useOrganization();
+const HOME_PRODUCT_COUNT = 8;
 
 const { data } = await useAsyncData(
   () => `home:${locale.value}`,
@@ -9,7 +10,10 @@ const { data } = await useAsyncData(
     const [hero, sections, products] = await Promise.all([
       cms.hero(),
       cms.sections(),
-      useCatalog().listProducts(),
+      // A catalog failure empties the product row; it must not take the CMS hero and sections with it.
+      useCatalog()
+        .listProducts(undefined, HOME_PRODUCT_COUNT)
+        .catch(() => []),
     ]);
     return { hero, sections, products };
   },
@@ -22,7 +26,7 @@ const { data } = await useAsyncData(
     <HomeHero v-if="data.hero" :hero="data.hero" />
     <HomeSection
       v-for="(section, i) in data.sections"
-      :key="section.title"
+      :key="section.id"
       :section="section"
       :flip="i % 2 === 1"
     />
@@ -44,7 +48,11 @@ const { data } = await useAsyncData(
         v-if="data.products.length"
         class="grid grid-cols-2 gap-x-4 gap-y-8 min-[1200px]:grid-cols-4 md:grid-cols-3 md:gap-x-6 md:gap-y-12"
       >
-        <ProductCard v-for="p in data.products.slice(0, 8)" :key="p.id" :product="p" />
+        <ProductCard
+          v-for="p in data.products.slice(0, HOME_PRODUCT_COUNT)"
+          :key="p.id"
+          :product="p"
+        />
       </div>
       <p v-else class="text-muted">{{ t('noProducts') }}</p>
     </section>

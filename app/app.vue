@@ -3,12 +3,15 @@ const { locale } = useLocale();
 const organization = useOrganization();
 const brand = useAppConfig().brand.name;
 const route = useRoute();
-const siteUrl = String(useRuntimeConfig().public.siteUrl).replace(/\/+$/, '');
+const config = useRuntimeConfig().public;
+const siteUrl = String(config.siteUrl).replace(/\/+$/, '');
 
 useHead({
   htmlAttrs: { lang: computed(() => locale.value.slice(0, 2)) },
   titleTemplate: (title?: string) => (title ? `${title} · ${brand}` : brand),
   link: [{ rel: 'canonical', href: computed(() => `${siteUrl}${route.path}`) }],
+  // Read at runtime, like /robots.txt; a private page's own robots meta replaces this one.
+  meta: [{ name: 'robots', content: config.siteIndexable ? 'index, follow' : 'noindex, nofollow' }],
 });
 </script>
 

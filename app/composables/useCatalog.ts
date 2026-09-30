@@ -1,5 +1,8 @@
 import type { Category, Collection, ProductDetail, ProductListItem } from '~/types/catalog';
 
+/** Lists return their first page only; pagination is not implemented yet (README, Known limits). */
+const MAX_PAGE_SIZE = 100;
+
 /**
  * Catalog reads through the SDK, normalised once so pages never see a null list. An organization
  * without the commerce feature gets empty lists and 404s instead of failing requests.
@@ -10,12 +13,16 @@ export function useCatalog() {
   const organization = useOrganization();
   const enabled = () => organization.value.commerce;
 
-  async function listProducts(categoryId?: string): Promise<ProductListItem[]> {
+  /** The first `pageSize` products (at most 100: lists are not paginated yet). */
+  async function listProducts(
+    categoryId?: string,
+    pageSize = MAX_PAGE_SIZE
+  ): Promise<ProductListItem[]> {
     if (!enabled()) return [];
     const res = await eldra.catalog.listProducts({
       locale: locale.value,
       categoryId,
-      pageSize: 100,
+      pageSize: Math.min(pageSize, MAX_PAGE_SIZE),
     });
     return res?.data ?? [];
   }
@@ -50,7 +57,7 @@ export function useCatalog() {
     if (!enabled()) return [];
     const res = await eldra.catalog.listCollectionProducts(slug, {
       locale: locale.value,
-      pageSize: 100,
+      pageSize: MAX_PAGE_SIZE,
     });
     return res?.data ?? [];
   }
