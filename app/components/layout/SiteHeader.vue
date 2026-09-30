@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PhCaretDown, PhHandbagSimple } from '@phosphor-icons/vue';
-import type { Locale } from '~/composables/useLocale';
+import type { Locale } from '~/utils/organization';
 import type { HeaderNavigationItem } from '~/utils/navigation';
 
 const { locale, locales, setLocale, t } = useLocale();

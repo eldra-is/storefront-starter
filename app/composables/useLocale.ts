@@ -1,7 +1,5 @@
 import { LOCALE_COOKIE, type Locale } from '~/utils/organization';
 
-export type { Locale } from '~/utils/organization';
-
 /**
  * Site language. @nuxtjs/i18n owns the active locale and the messages in i18n/locales; the
  * organization's locale list limits which ones a visitor can pick. The choice lives in a cookie

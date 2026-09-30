@@ -6,7 +6,7 @@ defineProps<{ hero: HomeHeroData }>();
 
 <template>
   <section
-    class="text-paper relative grid min-h-[calc(100vh-var(--header-h))] items-end justify-items-start bg-[#111]"
+    class="text-paper bg-ink relative grid min-h-[calc(100vh-var(--header-h))] items-end justify-items-start"
     data-testid="home-hero"
   >
     <ContentMedia

@@ -11,8 +11,8 @@ const base = (url: string) => url.replace(/\/+$/, '');
 /** The smallest variant at least as wide as the display width (800px when unknown). */
 export function mediaSrc(url: string, width?: number): string {
   const target = width && width > 0 ? width : 800;
-  const variant =
-    IMAGE_VARIANTS.find((v) => v.width >= target) ?? IMAGE_VARIANTS[IMAGE_VARIANTS.length - 1];
+  // Wider than every variant: the largest one (the tuple's last element, always defined).
+  const variant = IMAGE_VARIANTS.find((v) => v.width >= target) ?? IMAGE_VARIANTS[3];
   return `${base(url)}/${variant.name}`;
 }
 
