@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@eldrajs/sdk'
+  - '@eldrajs/rich-text'
+  - '@eldrajs/vue'
