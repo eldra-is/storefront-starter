@@ -1,0 +1,95 @@
+@import 'tailwindcss';
+
+/* Brand tokens: restyle the site here. Components use these names, never raw colours. */
+@theme {
+  --color-ink: #000;
+  --color-paper: #fff;
+  --color-muted: #6b6b6b;
+  --color-rule: #e6e6e6;
+  --color-accent: #1d4ed8;
+  --color-soft: #f4f4f4;
+  --font-sans: -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+:root {
+  --header-h: 104px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-paper text-ink m-0 font-sans text-[13px] leading-[1.5];
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  .prose p {
+    @apply mb-[1em] max-w-[62ch] text-sm leading-[1.7];
+  }
+
+  .prose h2,
+  .prose h3 {
+    @apply mt-[1.6em] mb-[0.6em] font-normal tracking-[0.06em] uppercase;
+  }
+
+  .prose ul {
+    @apply mb-[1em] list-disc pl-[1.2em];
+  }
+
+  .prose ol {
+    @apply mb-[1em] list-decimal pl-[1.2em];
+  }
+
+  .prose li p {
+    @apply mb-[0.35em];
+  }
+
+  .prose table {
+    @apply mb-[1.6em] w-full max-w-[62ch] border-collapse text-left text-sm;
+  }
+
+  .prose th,
+  .prose td {
+    @apply border-rule border-b py-2 pr-4 align-top;
+  }
+
+  .prose th {
+    @apply text-muted text-[11px] font-normal tracking-[0.14em] uppercase;
+  }
+
+  .prose td {
+    @apply tabular-nums;
+  }
+
+  .prose table p {
+    @apply m-0;
+  }
+
+  .prose a {
+    @apply border-b border-current;
+  }
+}
+
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: opacity 0.2s;
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+  opacity: 0;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --header-h: 64px;
+  }
+}
