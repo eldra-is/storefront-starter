@@ -27,10 +27,14 @@ In Studio, General settings, add `http://localhost:3000` under **Storefront orig
 | `BASE_API_URL`                         | gateway origin; empty means production (`https://web.eldra.app/api`); `/api` is appended when missing |
 | `NUXT_PUBLIC_CHECKOUT_URL`             | hosted checkout origin; empty means production; set it whenever `BASE_API_URL` is set                 |
 | `NUXT_PUBLIC_DEFAULT_LOCATION_ID`      | inventory location for stock badges; empty means no badges                                            |
-| `PREVIEW_TOKEN`                        | server-only; when set, server-side reads include drafts                                               |
+| `PREVIEW_TOKEN`                        | server-only; when set, server-side reads include drafts — see [Previewing drafts](#previewing-drafts) |
 | `NUXT_SITE_URL`, `NUXT_SITE_INDEXABLE` | canonical URL; whether search engines may index the site                                              |
 
 These variables are read at build time (including by `pnpm dev`); to change one on a server that is already built, set the runtime override instead — `NUXT_PUBLIC_ELDRA_ORG_ID`, `NUXT_PUBLIC_ELDRA_API_BASE_URL`, `NUXT_PUBLIC_CHECKOUT_URL`, `NUXT_PUBLIC_DEFAULT_LOCATION_ID`, `NUXT_PREVIEW_TOKEN`, `NUXT_PUBLIC_SITE_URL`, `NUXT_PUBLIC_SITE_INDEXABLE` — the standard Nuxt runtime-config env names.
+
+## Previewing drafts
+
+Set `PREVIEW_TOKEN` only on a separate, private preview deployment, never on the public site: the token is not tied to a visitor, so everyone who can reach that server sees unpublished content. Drafts appear on full server-rendered page loads only; after the first page, client-side navigation and blocks resolved in the browser read published content, so reload the page to see a draft.
 
 ## Content model
 
@@ -64,6 +68,10 @@ pnpm test:e2e       # Playwright, against an organization seeded from the manife
 ```
 
 `pnpm test:e2e` needs a few published products with stock; set `E2E_DISCOUNT_CODE` to also test a discount.
+
+## Known limits
+
+- Catalog lists (the shop, a category, a collection) and CMS lists show the first 100 products or entries in v0.1.0; pagination is not implemented yet.
 
 ## Deploying
 
