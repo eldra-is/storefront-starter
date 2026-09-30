@@ -6,7 +6,7 @@ test.describe('Shop', () => {
     await goto(page, '/shop');
     const cards = page.locator('[data-testid^="product-card-"]');
     await expect(cards.first()).toBeVisible();
-    for (const price of await cards.locator('.card__price').allInnerTexts()) {
+    for (const price of await cards.getByTestId('product-card-price').allInnerTexts()) {
       expect(priceDigits(price)).toBeGreaterThan(0);
     }
   });
@@ -19,7 +19,7 @@ test.describe('Shop', () => {
     const count = await onSale.count();
     test.skip(count === 0, 'No product on the first shop page is on sale.');
     for (const card of await onSale.all()) {
-      const now = priceDigits(await card.locator('.card__price > span').first().innerText());
+      const now = priceDigits(await card.getByTestId('product-card-price').innerText());
       const was = priceDigits(await card.locator('.price-was').innerText());
       expect(was).toBeGreaterThan(now);
     }

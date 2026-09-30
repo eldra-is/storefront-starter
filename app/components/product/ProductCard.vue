@@ -26,7 +26,9 @@ const range = computed(() => props.product.maxPrice > props.product.minPrice);
     <p class="text-xs tracking-[0.06em] uppercase">{{ product.title }}</p>
     <p class="card__price mt-1 text-xs">
       <span v-if="range" class="text-muted">{{ t('from') }}&nbsp;</span>
-      <span :class="{ 'text-accent': was }">{{ price(product.minPrice) }}</span>
+      <span :class="{ 'text-accent': was }" data-testid="product-card-price">{{
+        price(product.minPrice)
+      }}</span>
       <span v-if="was" class="price-was text-muted ml-2 line-through">{{ price(was) }}</span>
     </p>
   </NuxtLink>
