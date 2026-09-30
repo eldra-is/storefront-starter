@@ -1,0 +1,966 @@
+{
+  "format": "eldra.cms",
+  "version": 1,
+  "source": {
+    "organizationId": "00000000-0000-0000-0000-000000000000",
+    "organizationName": "Eldra storefront starter"
+  },
+  "exportedAt": "2026-09-30T00:00:00Z",
+  "requested": {
+    "scope": "BOTH",
+    "schemaRefs": [
+      "schema:navigation_item",
+      "schema:site_header",
+      "schema:site_footer",
+      "schema:footer_link",
+      "schema:home_hero",
+      "schema:home_section",
+      "schema:page",
+      "schema:block_text",
+      "schema:block_heading",
+      "schema:block_image",
+      "schema:block_card",
+      "schema:block_button",
+      "schema:block_embed",
+      "schema:block_entry_list"
+    ]
+  },
+  "effective": {
+    "scope": "BOTH",
+    "schemaRefs": [
+      "schema:navigation_item",
+      "schema:site_header",
+      "schema:site_footer",
+      "schema:footer_link",
+      "schema:home_hero",
+      "schema:home_section",
+      "schema:page",
+      "schema:block_text",
+      "schema:block_heading",
+      "schema:block_image",
+      "schema:block_card",
+      "schema:block_button",
+      "schema:block_embed",
+      "schema:block_entry_list"
+    ]
+  },
+  "schemas": [
+    {
+      "ref": "schema:navigation_item",
+      "sourceId": "23767c21-d4dc-4dbc-ab67-b07af93085bc",
+      "apiId": "navigation_item",
+      "name": "Navigation item",
+      "fields": [
+        {
+          "fieldId": "label",
+          "name": "Label",
+          "type": "string",
+          "groupId": "link",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "href",
+          "name": "Link",
+          "type": "string",
+          "groupId": "link",
+          "validators": { "required": true },
+          "helpText": "A path such as /pages/about or /shop, or a full external URL."
+        },
+        {
+          "fieldId": "kind",
+          "name": "Type",
+          "type": "select",
+          "groupId": "link",
+          "validators": { "required": true },
+          "helpText": "Catalog menu adds live product categories below this item; categories stay owned by the catalog.",
+          "metadata": {
+            "options": [
+              { "value": "link", "labels": { "en-US": "Link", "is-IS": "Hlekkur" }, "index": 0 },
+              {
+                "value": "catalog-menu",
+                "labels": { "en-US": "Catalog menu", "is-IS": "Vöruflokkar" },
+                "index": 1
+              }
+            ]
+          }
+        },
+        {
+          "fieldId": "active",
+          "name": "Active",
+          "type": "bool",
+          "groupId": "behaviour",
+          "default": true
+        },
+        {
+          "fieldId": "openInNewTab",
+          "name": "Open in new tab",
+          "type": "bool",
+          "groupId": "behaviour",
+          "default": false
+        }
+      ],
+      "groups": [
+        { "groupId": "link", "name": "Link", "defaultOpen": true },
+        { "groupId": "behaviour", "name": "Behaviour", "defaultOpen": true }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:site_header",
+      "sourceId": "4db79728-f566-4a39-91c8-45004211d616",
+      "apiId": "site_header",
+      "name": "Site header",
+      "fields": [
+        {
+          "fieldId": "name",
+          "name": "Name",
+          "type": "string",
+          "groupId": "brand",
+          "isTitle": true,
+          "validators": { "required": true },
+          "helpText": "Internal name for this header configuration."
+        },
+        {
+          "fieldId": "logo",
+          "name": "Logo",
+          "type": "media",
+          "groupId": "brand",
+          "helpText": "Transparent PNG or SVG shown in the header. Without one the header shows the brand name from app/app.config.ts."
+        },
+        {
+          "fieldId": "items",
+          "name": "Navigation items",
+          "type": "reference",
+          "groupId": "navigation",
+          "helpText": "Drag these into display order.",
+          "relation": { "allowedSchemaRefs": ["schema:navigation_item"], "multiple": true }
+        }
+      ],
+      "groups": [
+        { "groupId": "brand", "name": "Brand", "defaultOpen": true },
+        { "groupId": "navigation", "name": "Navigation", "defaultOpen": true }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:site_footer",
+      "sourceId": "73db7e39-d630-4383-803a-5d6fe2037c75",
+      "apiId": "site_footer",
+      "name": "Site footer",
+      "fields": [
+        {
+          "fieldId": "tagline",
+          "name": "Tagline",
+          "type": "string",
+          "isTitle": true,
+          "localized": true
+        },
+        {
+          "fieldId": "note",
+          "name": "Note",
+          "type": "string",
+          "localized": true,
+          "helpText": "Copyright line"
+        }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:footer_link",
+      "sourceId": "e5a49e05-e514-4027-b91e-cd37e7946211",
+      "apiId": "footer_link",
+      "name": "Footer link",
+      "fields": [
+        {
+          "fieldId": "label",
+          "name": "Label",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        { "fieldId": "href", "name": "Link", "type": "string", "validators": { "required": true } },
+        {
+          "fieldId": "column",
+          "name": "Column",
+          "type": "select",
+          "metadata": {
+            "options": [
+              { "value": "shop", "labels": { "en-US": "Shop", "is-IS": "Verslun" }, "index": 0 },
+              {
+                "value": "company",
+                "labels": { "en-US": "Company", "is-IS": "Fyrirtækið" },
+                "index": 1
+              },
+              { "value": "help", "labels": { "en-US": "Help", "is-IS": "Aðstoð" }, "index": 2 }
+            ]
+          }
+        },
+        { "fieldId": "order", "name": "Order", "type": "int" }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:home_hero",
+      "sourceId": "de55c3b1-42cd-4e8a-a465-06154592eda4",
+      "apiId": "home_hero",
+      "name": "Home hero",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Title",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        { "fieldId": "subtitle", "name": "Subtitle", "type": "text", "localized": true },
+        { "fieldId": "image", "name": "Image", "type": "media" },
+        { "fieldId": "ctaText", "name": "Button text", "type": "string", "localized": true },
+        { "fieldId": "ctaLink", "name": "Button link", "type": "string" }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:home_section",
+      "sourceId": "a4f714c7-294a-48eb-8555-e1391ca261b2",
+      "apiId": "home_section",
+      "name": "Home section",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Title",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "kicker",
+          "name": "Kicker",
+          "type": "string",
+          "localized": true,
+          "helpText": "Small line above the title"
+        },
+        { "fieldId": "body", "name": "Body", "type": "rich-text", "localized": true },
+        { "fieldId": "image", "name": "Image", "type": "media" },
+        { "fieldId": "ctaText", "name": "Button text", "type": "string", "localized": true },
+        { "fieldId": "ctaLink", "name": "Button link", "type": "string" },
+        { "fieldId": "order", "name": "Order", "type": "int" },
+        { "fieldId": "active", "name": "Active", "type": "bool", "default": true }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:page",
+      "sourceId": "ec30fbca-883f-4e9e-8999-c91e0b7275b5",
+      "apiId": "page",
+      "name": "Page",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Title",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "slug",
+          "name": "Slug",
+          "type": "slug",
+          "validators": { "required": true, "unique": true },
+          "helpText": "The page is served at /pages/{slug}."
+        },
+        { "fieldId": "seo", "name": "SEO", "type": "seo", "localized": true },
+        {
+          "fieldId": "private",
+          "name": "Hide from search engines",
+          "type": "bool",
+          "default": false
+        },
+        {
+          "fieldId": "blocks",
+          "name": "Blocks",
+          "type": "reference",
+          "relation": {
+            "allowedSchemaRefs": [
+              "schema:block_text",
+              "schema:block_heading",
+              "schema:block_image",
+              "schema:block_card",
+              "schema:block_button",
+              "schema:block_embed",
+              "schema:block_entry_list"
+            ],
+            "multiple": true
+          }
+        }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_text",
+      "sourceId": "cc832fd4-6661-49b8-869e-9b0f398f8b24",
+      "apiId": "block_text",
+      "name": "Block: text",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Internal name",
+          "type": "string",
+          "isTitle": true,
+          "validators": { "required": true }
+        },
+        { "fieldId": "content", "name": "Content", "type": "rich-text", "localized": true }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_heading",
+      "sourceId": "50f4fe68-5b4f-41e3-a1bb-a5b09ecfd402",
+      "apiId": "block_heading",
+      "name": "Block: heading",
+      "fields": [
+        {
+          "fieldId": "heading",
+          "name": "Heading",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "size",
+          "name": "Size",
+          "type": "select",
+          "metadata": {
+            "options": [
+              { "value": "SMALL", "labels": { "en-US": "Small", "is-IS": "Lítil" }, "index": 0 },
+              {
+                "value": "MEDIUM",
+                "labels": { "en-US": "Medium", "is-IS": "Miðlungs" },
+                "index": 1
+              },
+              { "value": "LARGE", "labels": { "en-US": "Large", "is-IS": "Stór" }, "index": 2 }
+            ]
+          }
+        }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_image",
+      "sourceId": "23d8bffd-ab9f-4065-be59-95f0ef3215a0",
+      "apiId": "block_image",
+      "name": "Block: image",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Internal name",
+          "type": "string",
+          "isTitle": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "image",
+          "name": "Image",
+          "type": "media",
+          "validators": { "required": true }
+        },
+        { "fieldId": "width", "name": "Display width (px)", "type": "int" },
+        { "fieldId": "link", "name": "Link", "type": "string" },
+        {
+          "fieldId": "decorative",
+          "name": "Decorative",
+          "type": "bool",
+          "default": false,
+          "helpText": "Decorative images get an empty alt text."
+        }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_card",
+      "sourceId": "81faac91-de6b-4109-823e-2ff5b6314a0a",
+      "apiId": "block_card",
+      "name": "Block: card",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Internal name",
+          "type": "string",
+          "isTitle": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "blocks",
+          "name": "Blocks",
+          "type": "reference",
+          "relation": {
+            "allowedSchemaRefs": [
+              "schema:block_text",
+              "schema:block_heading",
+              "schema:block_image",
+              "schema:block_button",
+              "schema:block_embed",
+              "schema:block_entry_list"
+            ],
+            "multiple": true
+          }
+        },
+        { "fieldId": "center", "name": "Center content", "type": "bool", "default": false },
+        { "fieldId": "shadow", "name": "Shadow", "type": "bool", "default": false }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_button",
+      "sourceId": "d59a1105-970c-4f30-97ef-90c986dd582c",
+      "apiId": "block_button",
+      "name": "Block: button",
+      "fields": [
+        {
+          "fieldId": "label",
+          "name": "Label",
+          "type": "string",
+          "isTitle": true,
+          "localized": true,
+          "validators": { "required": true }
+        },
+        {
+          "fieldId": "href",
+          "name": "Link",
+          "type": "string",
+          "validators": { "required": true },
+          "helpText": "A path such as /shop, or a full external URL."
+        },
+        {
+          "fieldId": "variant",
+          "name": "Variant",
+          "type": "select",
+          "metadata": {
+            "options": [
+              { "value": "PRIMARY", "labels": { "en-US": "Primary", "is-IS": "Aðal" }, "index": 0 },
+              {
+                "value": "SECONDARY",
+                "labels": { "en-US": "Secondary", "is-IS": "Auka" },
+                "index": 1
+              }
+            ]
+          }
+        }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_embed",
+      "sourceId": "a061bded-83c1-4b0a-bab1-3862a28c29f2",
+      "apiId": "block_embed",
+      "name": "Block: embed",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Title",
+          "type": "string",
+          "isTitle": true,
+          "validators": { "required": true },
+          "helpText": "Read by screen readers."
+        },
+        {
+          "fieldId": "tag",
+          "name": "Element",
+          "type": "select",
+          "validators": { "required": true },
+          "metadata": {
+            "options": [
+              { "value": "iframe", "labels": { "en-US": "iframe", "is-IS": "iframe" }, "index": 0 },
+              { "value": "embed", "labels": { "en-US": "embed", "is-IS": "embed" }, "index": 1 },
+              { "value": "script", "labels": { "en-US": "script", "is-IS": "script" }, "index": 2 }
+            ]
+          }
+        },
+        {
+          "fieldId": "url",
+          "name": "URL",
+          "type": "string",
+          "validators": { "required": true },
+          "helpText": "HTTPS only. Script embeds must come from an origin listed in shared/utils/embed-policy.ts."
+        },
+        { "fieldId": "aspectRatio", "name": "Aspect ratio", "type": "float" },
+        { "fieldId": "minHeight", "name": "Minimum height (px)", "type": "int" }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "schema:block_entry_list",
+      "sourceId": "61b05566-3a23-4975-ab37-6b36a8e4d532",
+      "apiId": "block_entry_list",
+      "name": "Block: entry list",
+      "fields": [
+        {
+          "fieldId": "title",
+          "name": "Title",
+          "type": "string",
+          "isTitle": true,
+          "localized": true
+        },
+        { "fieldId": "list", "name": "Entries", "type": "list" }
+      ],
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z"
+    }
+  ],
+  "entries": [
+    {
+      "ref": "entry:navigation_item:shop",
+      "sourceId": "e0ace874-04c7-4478-81c3-475d6165700f",
+      "schemaRef": "schema:navigation_item",
+      "data": { "href": "/shop", "kind": "catalog-menu", "active": true, "openInNewTab": false },
+      "localizations": {
+        "en-US": { "label": "Shop" },
+        "is-IS": { "label": "Verslun" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:navigation_item:collections",
+      "sourceId": "006cec57-fb08-4905-b9f8-47d62b113c3e",
+      "schemaRef": "schema:navigation_item",
+      "data": { "href": "/collections", "kind": "link", "active": true, "openInNewTab": false },
+      "localizations": {
+        "en-US": { "label": "Collections" },
+        "is-IS": { "label": "Línur" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:navigation_item:about",
+      "sourceId": "f50172da-3cd7-4a1f-b296-fd3e658fbef7",
+      "schemaRef": "schema:navigation_item",
+      "data": { "href": "/pages/about", "kind": "link", "active": true, "openInNewTab": false },
+      "localizations": {
+        "en-US": { "label": "About" },
+        "is-IS": { "label": "Um okkur" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:site_header:primary",
+      "sourceId": "a3d08cf3-1a12-492b-b2dc-8dab6c4d0448",
+      "schemaRef": "schema:site_header",
+      "data": {
+        "name": "Primary header",
+        "logo": [],
+        "items": [
+          { "kind": "entry", "ref": "entry:navigation_item:shop" },
+          { "kind": "entry", "ref": "entry:navigation_item:collections" },
+          { "kind": "entry", "ref": "entry:navigation_item:about" }
+        ]
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:site_footer:main",
+      "sourceId": "8d7ad2f1-812b-4458-8aca-07b587acd594",
+      "schemaRef": "schema:site_footer",
+      "data": {},
+      "localizations": {
+        "en-US": { "tagline": "Storefront", "note": "© 2026. Built on Eldra." },
+        "is-IS": { "tagline": "Vefverslun", "note": "© 2026. Smíðað á Eldra." }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:footer_link:shop",
+      "sourceId": "c886838f-6aa2-4450-8b2f-8ac765771c1f",
+      "schemaRef": "schema:footer_link",
+      "data": { "href": "/shop", "column": "shop", "order": 0 },
+      "localizations": {
+        "en-US": { "label": "Shop" },
+        "is-IS": { "label": "Verslun" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:footer_link:about",
+      "sourceId": "360fff44-42bc-4937-a891-cf4868828ebf",
+      "schemaRef": "schema:footer_link",
+      "data": { "href": "/pages/about", "column": "company", "order": 1 },
+      "localizations": {
+        "en-US": { "label": "About" },
+        "is-IS": { "label": "Um okkur" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:footer_link:shipping",
+      "sourceId": "2ce7f3e4-453b-49d5-a47e-930b2faa3261",
+      "schemaRef": "schema:footer_link",
+      "data": { "href": "/pages/shipping-and-returns", "column": "help", "order": 2 },
+      "localizations": {
+        "en-US": { "label": "Shipping and returns" },
+        "is-IS": { "label": "Sending og skil" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:home_hero:main",
+      "sourceId": "be4539ca-8089-478a-af0c-8f5c6cc484f1",
+      "schemaRef": "schema:home_hero",
+      "data": { "image": [], "ctaLink": "/shop" },
+      "localizations": {
+        "en-US": {
+          "title": "A storefront on Eldra",
+          "subtitle": "Everything on this page is content in Studio. Edit it there and reload.",
+          "ctaText": "Shop now"
+        },
+        "is-IS": {
+          "title": "Vefverslun á Eldra",
+          "subtitle": "Allt á þessari síðu er efni í Studio. Breyttu því þar og endurhlaðaðu.",
+          "ctaText": "Versla"
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:home_section:start",
+      "sourceId": "ed7eca48-79bb-4d61-bb5d-679a6e527bde",
+      "schemaRef": "schema:home_section",
+      "data": { "image": [], "ctaLink": "/pages/about", "order": 1, "active": true },
+      "localizations": {
+        "en-US": {
+          "title": "Make it yours",
+          "kicker": "Start here",
+          "body": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Replace this section in Studio under Home section. Sections are sorted by their order field."
+                  }
+                ]
+              }
+            ]
+          },
+          "ctaText": "Read about us"
+        },
+        "is-IS": {
+          "title": "Gerðu hana að þinni",
+          "kicker": "Byrjaðu hér",
+          "body": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Skiptu þessum hluta út í Studio undir Home section. Hlutum er raðað eftir order-reitnum."
+                  }
+                ]
+              }
+            ]
+          },
+          "ctaText": "Um okkur"
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:home_section:pages",
+      "sourceId": "4a629e45-9cf3-45e0-a75b-fac8664a6e98",
+      "schemaRef": "schema:home_section",
+      "data": { "image": [], "ctaLink": "/pages/shipping-and-returns", "order": 2, "active": true },
+      "localizations": {
+        "en-US": {
+          "title": "Pages built from blocks",
+          "kicker": "Content pages",
+          "body": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "The About and Shipping pages are page entries made of text, heading and button blocks."
+                  }
+                ]
+              }
+            ]
+          },
+          "ctaText": "Shipping and returns"
+        },
+        "is-IS": {
+          "title": "Síður úr kubbum",
+          "kicker": "Efnissíður",
+          "body": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Síðurnar Um okkur og Sending og skil eru page-færslur settar saman úr texta-, fyrirsagnar- og hnappakubbum."
+                  }
+                ]
+              }
+            ]
+          },
+          "ctaText": "Sending og skil"
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:block_text:about-intro",
+      "sourceId": "32917879-76f4-473b-a368-8b85296b66a3",
+      "schemaRef": "schema:block_text",
+      "data": { "title": "About: intro" },
+      "localizations": {
+        "en-US": {
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "This is an example page. Every page entry has a slug, a title, SEO fields and a list of blocks."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Replace this text in Studio, or add image, card, embed and entry list blocks."
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "is-IS": {
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Þetta er dæmisíða. Hver page-færsla hefur slóð, titil, SEO-reiti og lista af kubbum."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Skiptu þessum texta út í Studio, eða bættu við mynda-, spjald-, innfellingar- og færslulistakubbum."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:block_button:about-shop",
+      "sourceId": "64c84ce4-20e3-4d0c-b2b3-a9999845c5f1",
+      "schemaRef": "schema:block_button",
+      "data": { "href": "/shop", "variant": "PRIMARY" },
+      "localizations": {
+        "en-US": { "label": "Visit the shop" },
+        "is-IS": { "label": "Skoða verslunina" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:block_heading:shipping-title",
+      "sourceId": "c6a0aa5f-a281-4b9c-8064-63d69b454c8d",
+      "schemaRef": "schema:block_heading",
+      "data": { "size": "MEDIUM" },
+      "localizations": {
+        "en-US": { "heading": "How we ship" },
+        "is-IS": { "heading": "Hvernig við sendum" }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:block_text:shipping-body",
+      "sourceId": "c21b461c-6762-4fc9-b974-0f3e5d38bb11",
+      "schemaRef": "schema:block_text",
+      "data": { "title": "Shipping: body" },
+      "localizations": {
+        "en-US": {
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Shipping options and prices are chosen at checkout." }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [{ "type": "text", "text": "Describe your returns policy here." }]
+              }
+            ]
+          }
+        },
+        "is-IS": {
+          "content": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  { "type": "text", "text": "Sendingarmáti og verð eru valin í greiðsluferlinu." }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [{ "type": "text", "text": "Lýstu skilastefnunni þinni hér." }]
+              }
+            ]
+          }
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:page:about",
+      "sourceId": "0dfedff6-a20f-4fbc-9334-bdac9c893ba3",
+      "schemaRef": "schema:page",
+      "data": {
+        "slug": "about",
+        "private": false,
+        "blocks": [
+          { "kind": "entry", "ref": "entry:block_text:about-intro" },
+          { "kind": "entry", "ref": "entry:block_button:about-shop" }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "title": "About",
+          "seo": { "title": "About us", "description": "Who we are and what we sell." }
+        },
+        "is-IS": {
+          "title": "Um okkur",
+          "seo": { "title": "Um okkur", "description": "Hver við erum og hvað við seljum." }
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    },
+    {
+      "ref": "entry:page:shipping-and-returns",
+      "sourceId": "e7a3d424-4475-4b81-95e4-cdcef5ff8442",
+      "schemaRef": "schema:page",
+      "data": {
+        "slug": "shipping-and-returns",
+        "private": false,
+        "blocks": [
+          { "kind": "entry", "ref": "entry:block_heading:shipping-title" },
+          { "kind": "entry", "ref": "entry:block_text:shipping-body" }
+        ]
+      },
+      "localizations": {
+        "en-US": {
+          "title": "Shipping and returns",
+          "seo": {
+            "title": "Shipping and returns",
+            "description": "How orders are shipped and how returns work."
+          }
+        },
+        "is-IS": {
+          "title": "Sending og skil",
+          "seo": {
+            "title": "Sending og skil",
+            "description": "Hvernig pantanir eru sendar og hvernig skil virka."
+          }
+        }
+      },
+      "status": "PUBLISHED",
+      "createdAt": "2026-09-30T00:00:00Z",
+      "updatedAt": "2026-09-30T00:00:00Z",
+      "publishedAt": "2026-09-30T00:00:00Z"
+    }
+  ],
+  "media": []
+}
