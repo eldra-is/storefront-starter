@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:check
+      - run: pnpm format:check
+      - run: pnpm test
+
+  typecheck:
+    if: vars.ELDRA_ORG_ID != ''
+    runs-on: ubuntu-latest
+    env:
+      # An organization seeded from cms/content-model.eldra.json. Its id is public data, so a
+      # repository variable, not a secret. BASE_API_URL stays unset: production.
+      ELDRA_ORG_ID: ${{ vars.ELDRA_ORG_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate .eldra/web-studio through the SDK's Vite plugin
+        run: pnpm build
+      - run: test -f .eldra/web-studio/cms-types.ts && test -f .eldra/web-studio/contract.ts
+      - run: pnpm typecheck
+
+  typecheck-skipped:
+    if: vars.ELDRA_ORG_ID == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the skip
+        run: |
+          echo "::notice title=Typecheck skipped::Set the repository variable ELDRA_ORG_ID to an organization seeded from cms/content-model.eldra.json to type-check."
+          echo "Typecheck skipped: repository variable ELDRA_ORG_ID is not set." >> "$GITHUB_STEP_SUMMARY"

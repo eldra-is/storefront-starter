@@ -62,7 +62,7 @@ Environment variables, documented in `.env.example` and README:
 | `PREVIEW_TOKEN` | server-only; when set, server-side reads see drafts |
 | `NUXT_SITE_URL`, `NUXT_SITE_INDEXABLE` | canonical URL and robots |
 
-Rules carried over: every read goes through the SDK client from `useEldraClient()`, never a raw fetch; org id and preview token are server-only in production builds; the generated `.eldra/web-studio/` types are produced by the SDK's Vite plugin against the org and committed by the site, not by the starter, which ships them ignored and regenerates on first build.
+Rules carried over: every read goes through the SDK client from `useEldraClient()`, never a raw fetch; the org id is public runtime config, because the browser-side cart calls the API with it and it is public data anyway, while the preview token is server-only; the generated `.eldra/web-studio/` types are produced by the SDK's Vite plugin against the org and committed by the site, not by the starter, which ships them ignored and regenerates on first build.
 
 ## Content model
 
@@ -73,7 +73,7 @@ Rules carried over: every read goes through the SDK client from `useEldraClient(
 - `page` with `slug`, `title`, `seo`, `private` and a `blocks` tree for the generic block renderer, with the block sub-schemas the renderer knows: text, heading, image, card, button, embed, entry list.
 - Demo entries: one header with three items, one footer, one hero, two home sections, an "About" page and a "Shipping and returns" page. Localized fields carry `en-US` and `is-IS`.
 
-Catalog data (categories, products, a discount) is not part of the manifest; the demo shop reads whatever the organization has, and the README shows how to add products in Studio. A future MCP product tool changes that.
+Catalog data (categories, products, a discount) is not part of the manifest; the demo shop reads whatever the organization has, and the README shows how to add products in Studio. Product references on `home_section` are not in the manifest either, because the archive validator rejects relations that allow products; the README shows how to add that field in Studio. A future MCP product tool changes both.
 
 How the manifest reaches an organization: the `eldra-storefront` plugin's `content-model` command creates what is missing through the MCP. Without the plugin, importing the archive through Studio's content import is safe only into an organization with no CMS content yet, because that importer replaces matched schemas and drops media links on matched entries; the README says so plainly.
 
@@ -96,13 +96,13 @@ Deployment configuration of any kind, analytics, customer-facing copy outside th
 
 ## Testing
 
-- `pnpm lint`, `pnpm format:check`, `pnpm typecheck` in CI.
+- `pnpm lint`, `pnpm format:check`, `pnpm typecheck` in CI. Typecheck needs generated types, which need a real organization: the repository variable `ELDRA_ORG_ID` names a production organization seeded from the manifest (created once the MCP is in production, by seeding through it). While the variable is unset the typecheck job is skipped with a visible notice, not failed.
 - Playwright end-to-end against a running dev server pointed at an organization seeded from the manifest: home, a content page, the shop, a product, the cart and hand-off link. Fixtures are slugs from the manifest, not ids.
 - A manifest test asserts every schema the code reads exists in `cms/content-model.eldra.json` with the fields the code touches.
 
 ## Releases
 
-release-please, conventional commits, tags `vX.Y.Z`. The plugin's template registry pins a tag. Main is protected; every change is a pull request.
+release-please, conventional commits, tags `vX.Y.Z`. Tags are only ever created by merging the release PR, never by hand. The plugin's template registry pins a tag. Main is protected; every change is a pull request. The implementation plan stays out of the public repository because it names the private source repositories.
 
 ## Build order
 

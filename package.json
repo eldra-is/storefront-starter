@@ -1,0 +1,50 @@
+{
+  "name": "storefront-starter",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev --port 3000",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
+    "generate": "nuxt generate",
+    "lint": "oxlint --fix",
+    "lint:check": "oxlint",
+    "postinstall": "nuxt prepare",
+    "preview": "nuxt preview",
+    "test:e2e": "playwright test",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@eldrajs/rich-text": "^0.1.0",
+    "@eldrajs/sdk": "^0.2.5",
+    "@eldrajs/vue": "^0.1.0",
+    "@nuxtjs/i18n": "^10.6.0",
+    "@phosphor-icons/vue": "^2.2.1",
+    "@pinia/nuxt": "^1.0.2",
+    "nuxt": "^4.5.2",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@nokkvireyr/vue-config": "^2.2.0",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^25.9.1",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.2",
+    "vue-tsc": "^3.2.6"
+  },
+  "engines": {
+    "node": ">=22.19.0",
+    "pnpm": ">=11.0.0"
+  },
+  "packageManager": "pnpm@11.25.0"
+}
