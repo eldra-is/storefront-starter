@@ -59,9 +59,14 @@
   "buyingFor": "Kaupir fyrir",
   "buyForCompany": "Kaupa fyrir þetta fyrirtæki",
   "companyChanged": "Verð birtast nú fyrir fyrirtækið sem þú valdir.",
-  "newCartOtherCompany": "Karfan þín tilheyrði öðru fyrirtæki, svo ný karfa var stofnuð fyrir fyrirtækið sem þú kaupir fyrir.",
-  "newCartSignIn": "Sú karfa var verðlögð fyrir fyrirtæki og krefst innskráningar, svo ný karfa var stofnuð.",
   "companyRequired": "Veldu fyrst fyrirtækið sem þú kaupir fyrir á aðgangssíðunni.",
   "pricesUnavailable": "Ekki tókst að athuga verð í augnablikinu. Reyndu aftur eftir smástund.",
-  "discountNotForCompanyPrices": "Ekki er hægt að nota afsláttarkóða með verðum fyrirtækisins."
+  "discountNotForCompanyPrices": "Ekki er hægt að nota afsláttarkóða með verðum fyrirtækisins.",
+  "cartMovedToCompany": "Karfan þín var færð á {company} og verðlögð upp á nýtt.",
+  "cartMovedToCompanyMissing": "Karfan þín var færð á {company} og verðlögð upp á nýtt. Ekki tókst að færa {missing} vöru(r).",
+  "cartMovedToYourCompany": "Karfan þín var færð á fyrirtækið þitt og verðlögð upp á nýtt.",
+  "cartMovedToYourCompanyMissing": "Karfan þín var færð á fyrirtækið þitt og verðlögð upp á nýtt. Ekki tókst að færa {missing} vöru(r).",
+  "cartMovedToGuest": "Þú ert ekki lengur skráð(ur) inn, svo karfan þín var færð í gestakörfu á listaverði.",
+  "cartMovedToGuestMissing": "Þú ert ekki lengur skráð(ur) inn, svo karfan þín var færð í gestakörfu á listaverði. Ekki tókst að færa {missing} vöru(r).",
+  "cartMoveFailed": "Ekki tókst að verðleggja körfuna fyrir fyrirtækið þitt í augnablikinu. Vörurnar eru geymdar; reyndu aftur eftir smástund."
 }

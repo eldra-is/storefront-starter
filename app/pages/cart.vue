@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { cartErrorMessageKey, cartNoticeKey } from '~~/shared/utils/customer-prices';
+import { cartErrorMessageKey, cartNoticeMessage } from '~~/shared/utils/customer-prices';
 
 const cartStore = useCartStore();
 const { t } = useLocale();
@@ -85,8 +85,8 @@ async function removeCode() {
 }
 
 const replacedNotice = computed(() => {
-  const key = cartNoticeKey(cartStore.notice);
-  return key ? t(key) : '';
+  const message = cartNoticeMessage(cartStore.notice);
+  return message ? t(message.key, message.params) : '';
 });
 
 useSeoMeta({ title: () => t('cart') });
@@ -102,6 +102,14 @@ useSeoMeta({ title: () => t('cart') });
     <ClientOnly>
       <p v-if="replacedNotice" class="mt-4" role="status" data-testid="cart-replaced-notice">
         {{ replacedNotice }}
+      </p>
+      <p
+        v-if="cartStore.lastError === 'CART_MOVE_FAILED'"
+        class="text-accent mt-4"
+        role="alert"
+        data-testid="cart-move-failed"
+      >
+        {{ t('cartMoveFailed') }}
       </p>
       <p v-if="recovering" class="text-muted">…</p>
       <div

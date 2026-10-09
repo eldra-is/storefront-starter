@@ -89,21 +89,45 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
   }
   if (!current) return SIGNED_OUT_PRICING;
   const stored = await readActiveCompany(current.sessionId);
-  if (stored) return { signedIn: true, customerId: stored, needsCompany: false };
+  let memberships: EldraCustomerMe['memberships'] | null = null;
   try {
-    const choice = activeCompany(null, (await loadShopMe(event, auth, current)).memberships);
-    if (choice.kind === 'only') {
+    memberships = (await loadShopMe(event, auth, current)).memberships;
+  } catch (error) {
+    // 404 is FEATURE_DISABLED: B2B was switched off, so the business session is ended here (as the
+    // priced routes do) and the person continues as a guest.
+    if ((error as { statusCode?: number }).statusCode === 404) {
+      await endShopSession(event);
+      return SIGNED_OUT_PRICING;
+    }
+    // The session may just have ended (401) or the gateway is down: keep what is stored and let the
+    // priced routes decide per call.
+    if (!(await readShopSession(event))) return SIGNED_OUT_PRICING;
+    return { signedIn: true, customerId: stored, needsCompany: false, customerName: null };
+  }
+  const choice = activeCompany(stored, memberships);
+  const nameOf = (id: string) =>
+    memberships?.find((m) => m.customerId === id)?.customerName ?? null;
+  if (choice.kind === 'chosen' || choice.kind === 'only') {
+    if (choice.kind === 'only' && choice.customerId !== stored) {
       await saveActiveCompany(current.sessionId, current.session, choice.customerId).catch(
         () => undefined
       );
-      return { signedIn: true, customerId: choice.customerId, needsCompany: false };
     }
-    return { signedIn: true, customerId: null, needsCompany: choice.kind === 'choose' };
-  } catch {
-    // The session may just have ended (401) or the gateway is down: let the routes decide per call.
-    const still = await readShopSession(event);
-    return still ? { signedIn: true, customerId: null, needsCompany: false } : SIGNED_OUT_PRICING;
+    return {
+      signedIn: true,
+      customerId: choice.customerId,
+      needsCompany: false,
+      customerName: nameOf(choice.customerId),
+    };
   }
+  // A stored company the person no longer belongs to is forgotten.
+  if (stored) await clearActiveCompany(current.sessionId);
+  return {
+    signedIn: true,
+    customerId: null,
+    needsCompany: choice.kind === 'choose',
+    customerName: null,
+  };
 }
 
 /**

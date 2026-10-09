@@ -101,7 +101,14 @@ export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
     if (failure === 'guest') return run.call(undefined);
     if (failure === 'drop-company' && run.caller.customerId) {
       await run.dropCompany();
-      return run.call(pricedContext({ ...run.caller, customerId: null }));
+      try {
+        return await run.call(pricedContext({ ...run.caller, customerId: null }));
+      } catch (retryError) {
+        // Without the stale company a read may meet "choose a company" (several left): list prices,
+        // shown without the company label, until the person chooses. A write still needs the choice.
+        if (pricedFailure(retryError, run.kind) === 'guest') return run.call(undefined);
+        throw retryError;
+      }
     }
     throw error;
   }
@@ -172,12 +179,15 @@ export interface CustomerPricingState {
   customerId: string | null;
   /** Signed in with several companies and none chosen yet: prices are list prices until they pick. */
   needsCompany: boolean;
+  /** The active company's name, for messages; null when it could not be read. */
+  customerName: string | null;
 }
 
 export const SIGNED_OUT_PRICING: CustomerPricingState = {
   signedIn: false,
   customerId: null,
   needsCompany: false,
+  customerName: null,
 };
 
 /**
@@ -281,8 +291,73 @@ export function cartErrorMessageKey(
 }
 
 /** The message key telling the person why their cart was replaced, or null. */
-export function cartNoticeKey(notice: CartRefusal): string | null {
-  if (notice === 'new-cart-other-company') return 'newCartOtherCompany';
-  if (notice === 'new-cart-sign-in') return 'newCartSignIn';
-  return null;
+/**
+ * Why the cart now holds different prices, to tell the person: it was moved to the company they buy
+ * for (`company`), or to a guest cart because the company cart needs a sign-in (`guest`). Its lines
+ * were replayed into the new cart; `missing` counts those that could not be carried over.
+ */
+export interface CartNotice {
+  reason: 'company' | 'guest';
+  companyName: string | null;
+  missing: number;
+}
+
+/** The message (key and parameters) for a cart notice, or null. */
+export function cartNoticeMessage(
+  notice: CartNotice | null
+): { key: string; params: Record<string, string | number> } | null {
+  if (!notice) return null;
+  const missing = notice.missing > 0 ? 'Missing' : '';
+  if (notice.reason === 'guest') {
+    return { key: `cartMovedToGuest${missing}`, params: { missing: notice.missing } };
+  }
+  return notice.companyName
+    ? {
+        key: `cartMovedToCompany${missing}`,
+        params: { company: notice.companyName, missing: notice.missing },
+      }
+    : { key: `cartMovedToYourCompany${missing}`, params: { missing: notice.missing } };
+}
+
+/**
+ * What the cart must do before its prices are shown, from the company it was last written for
+ * (`boundTo`, kept beside the cart id; the web cart does not say) and who is buying now:
+ * - `keep`: it is this buyer's cart.
+ * - `move`: signed in for a company the cart is not priced for (another company's, or a guest
+ *   cart): replay its lines into a new cart for this company.
+ * - `forget`: a company cart on a browser no longer signed in (sign-out, a shared device): drop it.
+ * - `wait`: signed in but no company chosen yet: nothing can be priced; keep it and hide checkout.
+ */
+export type CartBindingAction = 'keep' | 'move' | 'forget' | 'wait';
+
+export function cartBindingAction(
+  boundTo: string | null,
+  pricing: CustomerPricingState,
+  hasLines: boolean
+): CartBindingAction {
+  if (!pricing.signedIn) return boundTo ? 'forget' : 'keep';
+  if (!pricing.customerId) return pricing.needsCompany ? 'wait' : 'keep';
+  if (boundTo === pricing.customerId) return 'keep';
+  if (!boundTo && !hasLines) return 'keep';
+  return 'move';
+}
+
+/**
+ * The server render's pricing state (plugins/customer-pricing.ts): a browser with a session cookie
+ * gets `private, no-store` on the page before anything priced is read, then the state the server
+ * session holds. A guest's render is left alone.
+ */
+export async function prepareCustomerPricing(deps: {
+  businessLogin: boolean;
+  hasSessionCookie: boolean;
+  setCacheControl: (value: string) => void;
+  fetchState: () => Promise<CustomerPricingState>;
+}): Promise<CustomerPricingState> {
+  if (!deps.businessLogin || !deps.hasSessionCookie) return { ...SIGNED_OUT_PRICING };
+  deps.setCacheControl(SIGNED_IN_PAGE_CACHE_CONTROL);
+  try {
+    return { ...SIGNED_OUT_PRICING, ...(await deps.fetchState()) };
+  } catch {
+    return { ...SIGNED_OUT_PRICING };
+  }
 }

@@ -22,8 +22,8 @@ export function useLocale() {
     cookie.value = next;
   }
 
-  function t(key: string): string {
-    return $i18n.t(key);
+  function t(key: string, params?: Record<string, string | number>): string {
+    return params ? $i18n.t(key, params) : $i18n.t(key);
   }
 
   return { locale, locales, setLocale, t };

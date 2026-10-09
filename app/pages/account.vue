@@ -15,6 +15,8 @@ if (!businessLogin.value) {
 const { data, error } = await useFetch<EldraCustomerMe>('/api/auth/me', {
   key: 'account-me',
   retry: false,
+  // A refreshed or ended session's cookie reaches the browser from the server render too.
+  onResponse: useForwardCookies(),
 });
 
 const state = computed(() =>
@@ -27,6 +29,8 @@ const fullName = computed(() =>
 const signInFailed = computed(() => route.query.signin === 'failed');
 // The company prices and the cart are for; chosen here when the person has more than one.
 const pricing = useCustomerPricing();
+// Signing out forgets a company cart, so a shared device never keeps showing company prices.
+const cartStore = useCartStore();
 const choosable = computed(() => (me.value ? selectableCompanies(me.value.memberships) : []));
 const companyChanged = computed(() => route.query.company === 'changed');
 // Full page loads: the auth routes are server routes, not pages.
@@ -139,7 +143,7 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
       </section>
 
       <div>
-        <form method="post" action="/auth/logout">
+        <form method="post" action="/auth/logout" @submit="cartStore.forgetCompanyCart()">
           <button type="submit" :class="button" data-testid="account-sign-out">
             {{ t('signOut') }}
           </button>
@@ -153,7 +157,7 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
       data-testid="account-no-membership"
     >
       <p class="text-muted">{{ t('noMembership') }}</p>
-      <form method="post" action="/auth/logout">
+      <form method="post" action="/auth/logout" @submit="cartStore.forgetCompanyCart()">
         <button type="submit" :class="button" data-testid="account-sign-out">
           {{ t('signOut') }}
         </button>

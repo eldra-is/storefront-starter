@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { cartNoticeKey } from '~~/shared/utils/customer-prices';
+import { cartNoticeMessage } from '~~/shared/utils/customer-prices';
 
 const cartStore = useCartStore();
 const { t } = useLocale();
 const price = usePrice();
 const items = computed(() => cartStore.cart?.items ?? []);
 const replacedNotice = computed(() => {
-  const key = cartNoticeKey(cartStore.notice);
-  return key ? t(key) : '';
+  const message = cartNoticeMessage(cartStore.notice);
+  return message ? t(message.key, message.params) : '';
 });
 </script>
 

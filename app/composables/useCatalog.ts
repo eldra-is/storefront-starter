@@ -16,8 +16,8 @@ export function useCatalog() {
   const { locale } = useLocale();
   const organization = useOrganization();
   const pricing = useCustomerPricing();
-  // Forwards the session cookie on the server render; the browser sends it itself.
-  const serverFetch = useRequestFetch();
+  // Forwards the session cookie on the server render (and its Set-Cookie back); the browser sends it itself.
+  const serverFetch = useServerFetch();
   const enabled = () => organization.value.commerce;
   const priced = () => pricing.value.signedIn;
 

@@ -9,7 +9,9 @@ import {
   activeCompany,
   addItemInput,
   cartErrorMessageKey,
-  cartNoticeKey,
+  cartBindingAction,
+  cartNoticeMessage,
+  prepareCustomerPricing,
   cartRefusal,
   catalogKey,
   chosenCompany,
@@ -174,6 +176,31 @@ describe('runPriced', () => {
     expect(call.mock.calls[1]?.[0]?.headers).toEqual({ Authorization: 'Bearer tok' });
   });
 
+  it('after dropping a stale company, a read that must choose a company falls back to a guest call', async () => {
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValueOnce(problem(403, 'SHOP_CUSTOMER_NOT_MEMBER'))
+      .mockRejectedValueOnce(problem(409, 'SHOP_CUSTOMER_REQUIRED'))
+      .mockResolvedValueOnce('list');
+    const run = harness(call);
+    await expect(runPriced(run)).resolves.toBe('list');
+    expect(run.dropCompany).toHaveBeenCalledTimes(1);
+    expect(run.endSession).not.toHaveBeenCalled();
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(call.mock.calls[1]?.[0]?.headers).toEqual({ Authorization: 'Bearer tok' });
+    expect(call.mock.calls[2]?.[0]).toBeUndefined();
+  });
+
+  it('after dropping a stale company, a write that must choose a company is refused', async () => {
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValueOnce(problem(403, 'SHOP_CUSTOMER_NOT_MEMBER'))
+      .mockRejectedValueOnce(problem(409, 'SHOP_CUSTOMER_REQUIRED'));
+    const run = harness(call, { kind: 'write' });
+    await expect(runPriced(run)).rejects.toMatchObject({ errorId: 'SHOP_CUSTOMER_REQUIRED' });
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
   it('reads as a guest when the person must still choose a company, keeping the session', async () => {
     const call = vi
       .fn<PricedRun<string>['call']>()
@@ -238,8 +265,8 @@ describe('caching', () => {
     });
     expect(a).not.toBe(b);
     expect(a).not.toBe('product:en-US:mug');
-    expect(catalogKey('p', { signedIn: true, customerId: null, needsCompany: true })).not.toBe(
-      catalogKey('p', { signedIn: true, customerId: null, needsCompany: false })
+    expect(catalogKey('p', { ...SIGNED_OUT_PRICING, signedIn: true, needsCompany: true })).not.toBe(
+      catalogKey('p', { ...SIGNED_OUT_PRICING, signedIn: true })
     );
   });
 });
@@ -313,9 +340,20 @@ describe('cart refusals', () => {
       'discountNotForCompanyPrices'
     );
     expect(cartErrorMessageKey(null, 'addFailed')).toBe('addFailed');
-    expect(cartNoticeKey('new-cart-other-company')).toBe('newCartOtherCompany');
-    expect(cartNoticeKey('new-cart-sign-in')).toBe('newCartSignIn');
-    expect(cartNoticeKey(null)).toBeNull();
+    expect(cartNoticeMessage({ reason: 'company', companyName: 'Acme', missing: 0 })).toEqual({
+      key: 'cartMovedToCompany',
+      params: { company: 'Acme', missing: 0 },
+    });
+    expect(cartNoticeMessage({ reason: 'company', companyName: 'Acme', missing: 2 })?.key).toBe(
+      'cartMovedToCompanyMissing'
+    );
+    expect(cartNoticeMessage({ reason: 'company', companyName: null, missing: 0 })?.key).toBe(
+      'cartMovedToYourCompany'
+    );
+    expect(cartNoticeMessage({ reason: 'guest', companyName: null, missing: 1 })?.key).toBe(
+      'cartMovedToGuestMissing'
+    );
+    expect(cartNoticeMessage(null)).toBeNull();
   });
 
   it('message keys exist in both locales', () => {
@@ -326,8 +364,13 @@ describe('cart refusals', () => {
       'companyRequired',
       'pricesUnavailable',
       'discountNotForCompanyPrices',
-      'newCartOtherCompany',
-      'newCartSignIn',
+      'cartMovedToCompany',
+      'cartMovedToCompanyMissing',
+      'cartMovedToYourCompany',
+      'cartMovedToYourCompanyMissing',
+      'cartMovedToGuest',
+      'cartMovedToGuestMissing',
+      'cartMoveFailed',
       'companyPrice',
       'listPrice',
     ])
@@ -359,5 +402,82 @@ describe('request parsing', () => {
     expect(pageSizeOf('500')).toBe(100);
     expect(pageSizeOf(undefined)).toBe(100);
     expect(pageSizeOf('-1')).toBe(100);
+  });
+});
+
+describe('cartBindingAction', () => {
+  const signedIn = (customerId: string | null, needsCompany = false) => ({
+    ...SIGNED_OUT_PRICING,
+    signedIn: true,
+    customerId,
+    needsCompany,
+  });
+
+  it('keeps the buyer’s own cart, and a guest cart for a guest', () => {
+    expect(cartBindingAction('a', signedIn('a'), true)).toBe('keep');
+    expect(cartBindingAction(null, SIGNED_OUT_PRICING, true)).toBe('keep');
+  });
+
+  it('moves another company’s cart, and a guest cart with lines once signed in', () => {
+    expect(cartBindingAction('a', signedIn('b'), true)).toBe('move');
+    expect(cartBindingAction('a', signedIn('b'), false)).toBe('move');
+    expect(cartBindingAction(null, signedIn('b'), true)).toBe('move');
+    expect(cartBindingAction(null, signedIn('b'), false)).toBe('keep');
+  });
+
+  it('forgets a company cart on a signed-out browser', () => {
+    expect(cartBindingAction('a', SIGNED_OUT_PRICING, true)).toBe('forget');
+  });
+
+  it('waits while no company is chosen', () => {
+    expect(cartBindingAction('a', signedIn(null, true), true)).toBe('wait');
+  });
+});
+
+describe('prepareCustomerPricing (the pricing plugin)', () => {
+  const state = { ...SIGNED_OUT_PRICING, signedIn: true, customerId: 'c1', customerName: 'Acme' };
+
+  it('sends a page rendered for a session cookie private, no-store, before reading the state', async () => {
+    const order: string[] = [];
+    const result = await prepareCustomerPricing({
+      businessLogin: true,
+      hasSessionCookie: true,
+      setCacheControl: (value) => order.push(`header:${value}`),
+      fetchState: async () => {
+        order.push('fetch');
+        return state;
+      },
+    });
+    expect(order).toEqual(['header:private, no-store', 'fetch']);
+    expect(result).toEqual(state);
+  });
+
+  it('keeps no-store when the state cannot be read, and answers signed out', async () => {
+    const setCacheControl = vi.fn();
+    const result = await prepareCustomerPricing({
+      businessLogin: true,
+      hasSessionCookie: true,
+      setCacheControl,
+      fetchState: async () => {
+        throw new Error('down');
+      },
+    });
+    expect(setCacheControl).toHaveBeenCalledWith('private, no-store');
+    expect(result).toEqual(SIGNED_OUT_PRICING);
+  });
+
+  it('leaves a guest’s page alone', async () => {
+    for (const deps of [
+      { businessLogin: true, hasSessionCookie: false },
+      { businessLogin: false, hasSessionCookie: true },
+    ]) {
+      const setCacheControl = vi.fn();
+      const fetchState = vi.fn();
+      await expect(
+        prepareCustomerPricing({ ...deps, setCacheControl, fetchState })
+      ).resolves.toEqual(SIGNED_OUT_PRICING);
+      expect(setCacheControl).not.toHaveBeenCalled();
+      expect(fetchState).not.toHaveBeenCalled();
+    }
   });
 });
