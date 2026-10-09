@@ -1,0 +1,183 @@
+import { shopIssuer, type EldraOidcTokens } from '@eldrajs/sdk';
+
+/**
+ * Business-customer login: the pure parts. The Nitro routes in server/routes/auth and
+ * server/api/auth do the I/O. The browser holds only an opaque session id; tokens stay in the
+ * server's `eldra-session` storage.
+ */
+
+/** Holds the opaque session id of a signed-in business customer. */
+export const SESSION_COOKIE = 'eldra_session';
+/** Holds the id of a login in flight (state, PKCE verifier, return path), between login and callback. */
+export const LOGIN_COOKIE = 'eldra_login';
+/** The Nitro storage mount for sessions and logins in flight (nuxt.config.ts, server/plugins). */
+export const SESSION_STORAGE = 'eldra-session';
+/** A login must come back from Keycloak within ten minutes. */
+export const LOGIN_TTL_SECONDS = 600;
+/** Session lifetime when Keycloak sends no refresh token expiry. */
+export const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
+/** Refresh the access token when less than this is left. */
+export const REFRESH_MARGIN_MS = 60_000;
+export const DEFAULT_RETURN_TO = '/account';
+
+const MAX_RETURN_TO_LENGTH = 2048;
+
+export type ShopSession = Pick<
+  EldraOidcTokens,
+  'accessToken' | 'refreshToken' | 'idToken' | 'expiresAt' | 'refreshExpiresAt'
+>;
+
+/** Stored under a login id until the callback takes it (single use). */
+export interface PendingLogin {
+  state: string;
+  codeVerifier: string;
+  returnTo: string;
+  redirectUri: string;
+}
+
+export const sessionKey = (sessionId: string) => `session:${sessionId}`;
+export const loginKey = (loginId: string) => `login:${loginId}`;
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** 32 random bytes from the platform CSPRNG as 43 base64url characters: session ids, login ids, state. */
+export function randomId(): string {
+  return base64Url(globalThis.crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** The shape `randomId()` produces; anything else in a cookie is ignored without a storage read. */
+export function isSessionId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
+/**
+ * A same-origin relative path to return to after sign-in, else `fallback`. Accepts `/path?query#hash`
+ * only: no scheme, no `//` (protocol-relative), no backslashes (browsers read `/\` as `//`), no
+ * whitespace or control characters (browsers strip tabs and newlines, which can turn `/\t/x` into
+ * `//x`), and never the auth routes themselves.
+ */
+export function safeReturnTo(value: unknown, fallback: string = DEFAULT_RETURN_TO): string {
+  if (typeof value !== 'string' || value.length > MAX_RETURN_TO_LENGTH) return fallback;
+  if (!value.startsWith('/') || value.startsWith('//')) return fallback;
+  // oxlint-disable-next-line no-control-regex -- rejecting control characters is the point
+  if (/[\\\s\u0000-\u001f\u007f]/.test(value)) return fallback;
+  if (value === '/auth' || value.startsWith('/auth/') || value.startsWith('/auth?'))
+    return fallback;
+  return value;
+}
+
+/** Seconds a session lives: until the refresh token expires, else eight hours. */
+export function sessionTtlSeconds(refreshExpiresAt: number | undefined, now: number): number {
+  // Keycloak sends refresh_expires_in 0 for tokens that do not expire on their own.
+  if (refreshExpiresAt === undefined || refreshExpiresAt <= now) return DEFAULT_SESSION_TTL_SECONDS;
+  return Math.max(1, Math.floor((refreshExpiresAt - now) / 1000));
+}
+
+export function needsRefresh(session: Pick<ShopSession, 'expiresAt'>, now: number): boolean {
+  return session.expiresAt - now < REFRESH_MARGIN_MS;
+}
+
+/** Compares the stored state with the callback's in constant time; an empty or repeated value never matches. */
+export function statesMatch(expected: string, actual: unknown): boolean {
+  if (!expected || typeof actual !== 'string' || actual.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1)
+    diff |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
+  return diff === 0;
+}
+
+export function toShopSession(tokens: EldraOidcTokens): ShopSession {
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    idToken: tokens.idToken,
+    expiresAt: tokens.expiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt,
+  };
+}
+
+/**
+ * The shop realm's issuer: `NUXT_PUBLIC_SHOP_ISSUER` when set, else derived from the Keycloak base
+ * URL and the organization's id (its UUID, never an alias). Empty when neither is possible.
+ */
+export function resolveShopIssuer(options: {
+  issuer: string;
+  keycloakBaseUrl: string;
+  orgId: string;
+}): string {
+  const issuer = options.issuer.trim().replace(/\/+$/, '');
+  if (issuer) return issuer;
+  const base = options.keycloakBaseUrl.trim();
+  const orgId = options.orgId.trim();
+  return base && orgId ? shopIssuer({ keycloakBaseUrl: base, orgId }) : '';
+}
+
+/** Sign-in shows only when the organization sells to businesses and the storefront client is configured. */
+export function businessLoginEnabled(options: {
+  b2b: boolean;
+  clientSecret: string;
+  issuer: string;
+}): boolean {
+  return options.b2b && Boolean(options.clientSecret) && Boolean(options.issuer);
+}
+
+export type AccountState = 'signed-in' | 'signed-out' | 'no-membership' | 'unavailable' | 'error';
+
+/** What `/account` shows for the status of `/api/auth/me`; `undefined` is a success. */
+export function accountState(status: number | undefined): AccountState {
+  if (status === undefined) return 'signed-in';
+  if (status === 401) return 'signed-out';
+  if (status === 403) return 'no-membership';
+  if (status === 404) return 'unavailable';
+  return 'error';
+}
+
+/** The session after a refresh; Keycloak may leave out a refresh or id token it did not rotate. */
+export function mergeRefreshed(previous: ShopSession, tokens: EldraOidcTokens): ShopSession {
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken || previous.refreshToken,
+    idToken: tokens.idToken || previous.idToken,
+    expiresAt: tokens.expiresAt,
+    refreshExpiresAt: tokens.refreshExpiresAt ?? previous.refreshExpiresAt,
+  };
+}
+
+/**
+ * The authorization code of a callback that belongs to the pending login of this browser, else null:
+ * no pending login, a state that does not match, an `error` from Keycloak, or no single code.
+ */
+export function callbackCode(
+  pending: Pick<PendingLogin, 'state'> | null,
+  query: Record<string, unknown>
+): string | null {
+  if (!pending || query.error !== undefined) return null;
+  if (!statesMatch(pending.state, query.state)) return null;
+  return typeof query.code === 'string' && query.code ? query.code : null;
+}
+
+export interface AuthFailure {
+  statusCode: 401 | 403 | 502;
+  /** Delete the stored session and clear the cookie. */
+  endSession: boolean;
+}
+
+/** A failed refresh: `invalid_grant` means the Keycloak session is over; anything else is an outage. */
+export function refreshFailure(error: unknown): AuthFailure {
+  const code = (error as { error?: unknown } | null)?.error;
+  return code === 'invalid_grant'
+    ? { statusCode: 401, endSession: true }
+    : { statusCode: 502, endSession: false };
+}
+
+/** A failed `customer.me`: 401 SHOP_TOKEN_INVALID signs out, 403 SHOP_NO_MEMBERSHIP keeps the session. */
+export function meFailure(error: unknown): AuthFailure {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (status === 401) return { statusCode: 401, endSession: true };
+  if (status === 403) return { statusCode: 403, endSession: false };
+  return { statusCode: 502, endSession: false };
+}

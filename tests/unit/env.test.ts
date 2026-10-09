@@ -28,6 +28,12 @@ describe('resolveStorefrontEnv', () => {
       PREVIEW_TOKEN: 'secret',
       NUXT_SITE_URL: 'https://shop.example.com/',
       NUXT_SITE_INDEXABLE: 'true',
+      NUXT_SHOP_CLIENT_ID: ' shop-client ',
+      NUXT_SHOP_CLIENT_SECRET: ' client-secret ',
+      NUXT_PUBLIC_SHOP_ISSUER: 'https://auth.example.com/realms/shop-1/',
+      NUXT_PUBLIC_KEYCLOAK_BASE_URL: 'https://auth.example.com/',
+      NUXT_SESSION_STORAGE_DRIVER: ' REDIS ',
+      NUXT_SESSION_STORAGE_URL: ' redis://cache:6379 ',
     });
     expect(env).toEqual({
       apiBaseUrl: 'https://gateway.example.com/api',
@@ -37,6 +43,11 @@ describe('resolveStorefrontEnv', () => {
       siteUrl: 'https://shop.example.com',
       siteIndexable: true,
       defaultLocationId: 'loc-1',
+      shopClientId: 'shop-client',
+      shopClientSecret: 'client-secret',
+      shopIssuer: 'https://auth.example.com/realms/shop-1',
+      keycloakBaseUrl: 'https://auth.example.com',
+      sessionStorage: { driver: 'redis', url: 'redis://cache:6379' },
     });
   });
 
@@ -48,5 +59,16 @@ describe('resolveStorefrontEnv', () => {
     expect(env.siteUrl).toBe('http://localhost:3000');
     expect(env.siteIndexable).toBe(false);
     expect(env.defaultLocationId).toBe('');
+    expect(env.shopClientId).toBe('storefront');
+    expect(env.shopClientSecret).toBe('');
+    expect(env.shopIssuer).toBe('');
+    expect(env.keycloakBaseUrl).toBe('');
+    expect(env.sessionStorage).toEqual({ driver: 'memory', url: '' });
+  });
+
+  it('keeps sessions in memory for an unknown storage driver', () => {
+    expect(
+      resolveStorefrontEnv({ NUXT_SESSION_STORAGE_DRIVER: 'mongo' }).sessionStorage.driver
+    ).toBe('memory');
   });
 });

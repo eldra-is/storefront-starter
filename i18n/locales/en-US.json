@@ -36,5 +36,20 @@
   "close": "Close",
   "from": "from",
   "viewCart": "View cart",
-  "description": "Description"
+  "description": "Description",
+  "account": "Account",
+  "signIn": "Sign in",
+  "signOut": "Sign out",
+  "signInIntro": "Business customers sign in to see their companies and account.",
+  "signInFailed": "Sign-in did not complete. Please try again.",
+  "noMembership": "You are signed in, but your login is not linked to a company here yet. Contact us if you expected access.",
+  "accountError": "Your account could not be loaded. Please try again shortly.",
+  "accountUnavailable": "Business sign-in is not available here.",
+  "companies": "Companies",
+  "customerNumber": "Customer number",
+  "role": "Role",
+  "roleBuyer": "Buyer",
+  "roleAdmin": "Administrator",
+  "invited": "Invitation pending",
+  "email": "Email"
 }

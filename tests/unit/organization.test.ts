@@ -15,11 +15,13 @@ const commerceOn = [
 describe('toOrganizationSettings', () => {
   it('reads currency, commerce and both locales', () => {
     const settings = toOrganizationSettings(
-      { name: 'Shop', commerce: { currency: 'EUR' }, features: commerceOn },
+      { id: 'org-uuid', name: 'Shop', commerce: { currency: 'EUR' }, features: commerceOn },
       { availableLocales: ['en-US', 'is-IS'], defaultLocale: 'en-US' }
     );
     expect(settings).toEqual({
+      id: 'org-uuid',
       name: 'Shop',
+      b2b: false,
       currency: 'EUR',
       commerce: true,
       locales: ['en-US', 'is-IS'],
@@ -35,6 +37,18 @@ describe('toOrganizationSettings', () => {
       toOrganizationSettings({ features: [{ feature: 'ECOMMERCE', enabled: false }] }, null)
         .commerce
     ).toBe(false);
+  });
+
+  it('turns business sales on with an enabled B2B feature only', () => {
+    expect(
+      toOrganizationSettings({ features: [...commerceOn, { feature: 'B2B', enabled: true }] }, null)
+        .b2b
+    ).toBe(true);
+    expect(
+      toOrganizationSettings({ features: [{ feature: 'B2B', enabled: false }] }, null).b2b
+    ).toBe(false);
+    expect(toOrganizationSettings(null, null).b2b).toBe(false);
+    expect(toOrganizationSettings(null, null).id).toBe('');
   });
 
   it('keeps a single-locale organization to that locale', () => {

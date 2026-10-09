@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { PhCaretDown, PhHandbagSimple } from '@phosphor-icons/vue';
+import { PhCaretDown, PhHandbagSimple, PhUser } from '@phosphor-icons/vue';
 import type { Locale } from '~/utils/organization';
 import type { HeaderNavigationItem } from '~/utils/navigation';
 
 const { locale, locales, setLocale, t } = useLocale();
 const organization = useOrganization();
+const businessLogin = useBusinessLogin();
 const brand = useAppConfig().brand.name;
 const cartStore = useCartStore();
 const menuOpen = ref(false);
@@ -164,6 +165,16 @@ function switchLocale() {
         <span v-else>{{ brand }}</span>
       </NuxtLink>
       <div class="flex items-center justify-end gap-3 md:gap-5">
+        <NuxtLink
+          v-if="businessLogin"
+          to="/account"
+          class="grid h-8 w-8 place-items-center"
+          data-testid="header-account"
+          :aria-label="t('account')"
+          :aria-current="route.path === '/account' ? 'page' : undefined"
+        >
+          <PhUser :size="26" weight="thin" aria-hidden="true" />
+        </NuxtLink>
         <button
           v-if="organization.commerce"
           type="button"

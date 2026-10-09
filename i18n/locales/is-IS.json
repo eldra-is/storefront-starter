@@ -36,5 +36,20 @@
   "close": "Loka",
   "from": "frá",
   "viewCart": "Skoða körfu",
-  "description": "Lýsing"
+  "description": "Lýsing",
+  "account": "Aðgangur",
+  "signIn": "Innskráning",
+  "signOut": "Útskráning",
+  "signInIntro": "Fyrirtækjaviðskiptavinir skrá sig inn til að sjá fyrirtæki sín og aðgang.",
+  "signInFailed": "Innskráning tókst ekki. Reyndu aftur.",
+  "noMembership": "Þú ert skráð(ur) inn en aðgangurinn þinn er ekki enn tengdur fyrirtæki hér. Hafðu samband ef þú áttir von á aðgangi.",
+  "accountError": "Ekki tókst að sækja aðganginn. Reyndu aftur eftir smástund.",
+  "accountUnavailable": "Innskráning fyrirtækja er ekki í boði hér.",
+  "companies": "Fyrirtæki",
+  "customerNumber": "Viðskiptamannanúmer",
+  "role": "Hlutverk",
+  "roleBuyer": "Kaupandi",
+  "roleAdmin": "Stjórnandi",
+  "invited": "Boð óstaðfest",
+  "email": "Netfang"
 }

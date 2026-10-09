@@ -45,6 +45,12 @@ Two composition models: flat, repeatable section schemas for the home page, and 
 - Prices: `usePrice()` → `formatPrice(amount, currency, locale)` with `Intl.NumberFormat` and the locale passed explicitly.
 - Links that differ only by query (`/shop?category=…`) bind `aria-current` explicitly.
 
+## Business login
+
+- Off unless the organization has B2B and the storefront client is configured (`useBusinessLogin()`, set on the server by `plugins/organization.ts`; only the boolean reaches the browser).
+- Server routes `server/routes/auth/{login,callback,logout}.get.ts` and `server/api/auth/me.get.ts`; session I/O in `server/utils/shop-session.ts`; pure rules (return-path validation, expiry, error mapping) in `shared/utils/auth.ts` with unit tests.
+- Tokens stay in Nitro storage `eldra-session`; the `eldra_session` cookie is an opaque random id. Never put a token in a cookie, `localStorage`, `useState` or a page payload. Return paths go through `safeReturnTo`.
+
 ## Languages
 
 `en-US` and `is-IS` ship in `i18n/locales/`; the organization's locale list limits them. The choice is the `storefront_locale` cookie; switching reloads the page so server-rendered content follows.

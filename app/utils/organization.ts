@@ -9,10 +9,14 @@ export const LOCALE_LABELS: Record<Locale, string> = { 'en-US': 'EN', 'is-IS': '
 export const ORGANIZATION_STATE_KEY = 'eldra-organization';
 
 export interface OrganizationSettings {
+  /** The organization's UUID, even when ELDRA_ORG_ID is an alias; empty until it has been read. */
+  id: string;
   name: string;
   /** ISO 4217 code from the organization's commerce settings; null when it has none. */
   currency: string | null;
   commerce: boolean;
+  /** The B2B feature: business customers may sign in (when the storefront client is configured too). */
+  b2b: boolean;
   /** The organization's locales that ship with this starter; never empty. */
   locales: Locale[];
   defaultLocale: Locale;
@@ -24,6 +28,7 @@ export interface OrganizationSettings {
  * field, so callers cast the SDK response to this shape.
  */
 export interface OrganizationDetailsInput {
+  id?: string;
   name?: string;
   commerce?: { currency?: string } | null;
   features?: Array<{ feature: string; enabled: boolean }> | null;
@@ -37,9 +42,11 @@ export interface OrganizationI18nInput {
 
 /** Used until the organization has been read, and when it cannot be. */
 export const FALLBACK_ORGANIZATION: OrganizationSettings = {
+  id: '',
   name: '',
   currency: null,
   commerce: true,
+  b2b: false,
   locales: [...SHIPPED_LOCALES],
   defaultLocale: FALLBACK_LOCALE,
 };
@@ -60,12 +67,14 @@ export function toOrganizationSettings(
   const wanted = i18n?.defaultLocale;
   const defaultLocale =
     isShippedLocale(wanted) && locales.includes(wanted) ? wanted : (locales[0] ?? FALLBACK_LOCALE);
+  const enabled = (feature: string) =>
+    (details?.features ?? []).some((row) => row.feature === feature && row.enabled);
   return {
+    id: details?.id ?? '',
     name: details?.name ?? '',
     currency: details?.commerce?.currency || null,
-    commerce: details
-      ? (details.features ?? []).some((row) => row.feature === 'ECOMMERCE' && row.enabled)
-      : FALLBACK_ORGANIZATION.commerce,
+    commerce: details ? enabled('ECOMMERCE') : FALLBACK_ORGANIZATION.commerce,
+    b2b: enabled('B2B'),
     locales,
     defaultLocale,
   };
