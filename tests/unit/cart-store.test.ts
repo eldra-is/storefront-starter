@@ -2,7 +2,7 @@ import { EldraHttpError } from '@eldrajs/sdk';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
-import { errorIdOf, isCartGone, isNotFound } from '../../app/utils/errors';
+import { errorIdOf, isCartGone, isNotFound, statusOf } from '../../app/utils/errors';
 import { SIGNED_OUT_PRICING, type CustomerPricingState } from '../../shared/utils/customer-prices';
 
 // The cart store runs against stubbed Nuxt globals: the gateway client (`useEldraClient`), this
@@ -39,6 +39,8 @@ const gatewayError = (status: number, errorId: string) =>
   new EldraHttpError(new Response(null, { status }), { code: 'CONFLICT', errorId });
 
 let storage: MemoryStorage;
+/** `storage` listeners the store registered (another tab changing the cart). */
+let storageListeners: ((event: { key: string | null }) => void)[];
 let pricing: ReturnType<typeof ref<CustomerPricingState>>;
 let carts: Record<string, ReturnType<typeof cartOf>>;
 let serverFetch: ReturnType<typeof vi.fn>;
@@ -100,6 +102,13 @@ beforeEach(() => {
   vi.stubGlobal('errorIdOf', errorIdOf);
   vi.stubGlobal('isNotFound', isNotFound);
   vi.stubGlobal('isCartGone', isCartGone);
+  vi.stubGlobal('statusOf', statusOf);
+  storageListeners = [];
+  vi.stubGlobal('window', {
+    addEventListener: (type: string, listener: (event: { key: string | null }) => void) => {
+      if (type === 'storage') storageListeners.push(listener);
+    },
+  });
 });
 
 describe('cart store: a cart priced for someone else is never shown', () => {
@@ -457,5 +466,245 @@ describe('cart store: discount codes', () => {
     await cart.addItem('p-v1', 'v1', 1);
     expect(cart.boundTo).toBe('b');
     expect(cart.discountAllowed).toBe(false);
+  });
+});
+
+describe('cart store: a write never unbinds a company cart (P3-R7)', () => {
+  it('a removal the server ran as a guest on a company cart moves it to a guest cart', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1', 2), line('i2', 'v2')]);
+    pricing.value = signedInAs('b');
+    const cart = await store();
+    await cart.loadCart();
+    expect(cart.checkoutUrl).toBe('https://checkout.example/old');
+
+    // The session ended server-side; the removal ran as a guest and succeeded (the line is gone).
+    pricedFor = () => 'guest';
+    serverFetch.mockImplementationOnce(async () => {
+      carts.old = cartOf('old', [line('i1', 'v1', 2)]);
+      return carts.old;
+    });
+    eldra.cart.addItem.mockResolvedValueOnce({ id: 'g1' });
+    carts.g1 = cartOf('g1', [line('g1', 'v1', 2)]);
+    await cart.removeItem('i2');
+
+    expect(serverFetch.mock.calls[0]?.[0]).toBe('/api/cart/old/items/i2');
+    expect(pricing.value.signedIn).toBe(false);
+    // The replay is a guest's, direct, and carries only what is left.
+    expect(eldra.cart.addItem).toHaveBeenCalledExactlyOnceWith({
+      productId: 'p-v1',
+      variantId: 'v1',
+      quantity: 2,
+    });
+    expect(cart.cartId).toBe('g1');
+    expect(cart.boundTo).toBeNull();
+    expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
+    expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
+  });
+
+  it('when that move cannot be made, the cart stays company-bound: no checkout, no code entry', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1'), line('i2', 'v2')]);
+    pricing.value = signedInAs('b');
+    const cart = await store();
+    await cart.loadCart();
+
+    pricedFor = () => 'guest';
+    serverFetch.mockResolvedValueOnce(undefined);
+    eldra.cart.addItem.mockRejectedValue(new Error('offline'));
+    await cart.removeItem('i2');
+
+    expect(cart.cartId).toBe('old');
+    expect(cart.boundTo).toBe('b');
+    expect(storage.getItem(BOUND_KEY)).toBe('b');
+    expect(cart.checkoutUrl).toBeNull();
+    expect(cart.discountAllowed).toBe(false);
+  });
+
+  it('a direct guest removal on a company cart (an earlier move failed) does not unbind it', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1'), line('i2', 'v2')]);
+    // Signed out: every attempt to move the cart to a guest cart fails (offline).
+    eldra.cart.addItem.mockRejectedValue(new Error('offline'));
+    const cart = await store();
+    await cart.loadCart();
+    expect(cart.moveFailed).toBe(true);
+
+    eldra.cart.removeItem.mockResolvedValueOnce(undefined);
+    cart.cart = carts.old as never;
+    await cart.removeItem('i2');
+    expect(eldra.cart.removeItem).toHaveBeenCalledWith('old', 'i2');
+    expect(storage.getItem(BOUND_KEY)).toBe('b');
+    expect(cart.checkoutUrl).toBeNull();
+  });
+});
+
+describe('cart store: a move never loses lines to a failure that may pass', () => {
+  it('lines 1 and 3 move, line 2 meets 503: the old cart is kept and nothing is forgotten', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'a');
+    carts.old = cartOf('old', [line('i1', 'v1'), line('i2', 'v2'), line('i3', 'v3')]);
+    pricing.value = signedInAs('b');
+    serverFetch
+      .mockResolvedValueOnce({ id: 'new' })
+      .mockRejectedValueOnce(routeError(503, 'CART_PRICES_UNAVAILABLE'))
+      .mockResolvedValueOnce({ id: 'new' });
+
+    const cart = await store();
+    await cart.loadCart();
+
+    expect(cart.cartId).toBe('old');
+    expect(storage.getItem(CART_KEY)).toBe('old');
+    expect(storage.getItem(BOUND_KEY)).toBe('a');
+    expect(cart.moveFailed).toBe(true);
+    expect(cart.lastError).toBe('CART_MOVE_FAILED');
+    expect(cart.notice).toBeNull();
+    expect(cart.checkoutUrl).toBeNull();
+  });
+
+  it('a rate limit or a network failure abandons the move the same way', async () => {
+    for (const failure of [
+      routeError(429, 'TOO_MANY_REQUESTS'),
+      Object.assign(new Error('fetch failed'), {}),
+    ]) {
+      setActivePinia(createPinia());
+      vi.resetModules();
+      storage.setItem(CART_KEY, 'old');
+      storage.setItem(BOUND_KEY, 'a');
+      carts.old = cartOf('old', [line('i1', 'v1'), line('i2', 'v2')]);
+      pricing.value = signedInAs('b');
+      serverFetch.mockReset();
+      serverFetch.mockResolvedValueOnce({ id: 'new' }).mockRejectedValueOnce(failure);
+      const cart = await store();
+      await cart.loadCart();
+      expect(cart.cartId).toBe('old');
+      expect(cart.moveFailed).toBe(true);
+    }
+  });
+
+  it('a line refused for good (gone, out of stock) is left behind and counted', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'a');
+    carts.old = cartOf('old', [line('i1', 'v1'), line('i2', 'v2'), line('i3', 'v3')]);
+    pricing.value = signedInAs('b', 'Beta hf.');
+    serverFetch
+      .mockResolvedValueOnce({ id: 'new' })
+      .mockRejectedValueOnce(routeError(409, 'CART_INSUFFICIENT_STOCK'))
+      .mockRejectedValueOnce(routeError(422, 'PRODUCT_NOT_AVAILABLE'));
+    carts.new = cartOf('new', [line('n1', 'v1')]);
+
+    const cart = await store();
+    await cart.loadCart();
+
+    expect(cart.cartId).toBe('new');
+    expect(cart.notice).toEqual({ reason: 'company', companyName: 'Beta hf.', missing: 2 });
+  });
+
+  it('when every line is refused for good, the old cart is let go with a notice', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'a');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    pricing.value = signedInAs('b', 'Beta hf.');
+    serverFetch.mockRejectedValueOnce(routeError(404, 'NOT_FOUND'));
+
+    const cart = await store();
+    await cart.loadCart();
+
+    expect(cart.cartId).toBeNull();
+    expect(cart.moveFailed).toBe(false);
+    expect(cart.notice).toEqual({ reason: 'company', companyName: 'Beta hf.', missing: 1 });
+  });
+});
+
+describe('cart store: business login switched off (P3-R8)', () => {
+  it('CART_CUSTOMER_PRICES_OFF from a cart route moves the basket to a guest cart', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    carts.g1 = cartOf('g1', [line('g1', 'v1'), line('g2', 'v2')]);
+    pricing.value = signedInAs('b');
+    serverFetch.mockRejectedValueOnce(routeError(409, 'CART_CUSTOMER_PRICES_OFF'));
+    eldra.cart.addItem.mockResolvedValue({ id: 'g1' });
+
+    const cart = await store();
+    await cart.addItem('p-v2', 'v2', 1);
+
+    expect(pricing.value.signedIn).toBe(false);
+    expect(eldra.cart.addItem).toHaveBeenCalledTimes(2);
+    expect(eldra.cart.addItem.mock.calls[1]?.[0]).toMatchObject({ variantId: 'v2', cartId: 'g1' });
+    expect(cart.cartId).toBe('g1');
+    expect(cart.boundTo).toBeNull();
+    expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
+    expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
+  });
+
+  it('CART_CUSTOMER_PRICES_OFF on a direct guest write moves the company cart too', async () => {
+    storage.setItem(CART_KEY, 'old');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    carts.g1 = cartOf('g1', [line('g1', 'v1')]);
+    const cart = await store();
+    await cart.loadCart();
+    eldra.cart.updateItem.mockRejectedValueOnce(gatewayError(409, 'CART_CUSTOMER_PRICES_OFF'));
+    eldra.cart.addItem.mockResolvedValueOnce({ id: 'g1' });
+    eldra.cart.updateItem.mockResolvedValueOnce(undefined);
+
+    await cart.updateQuantity('i1', 4);
+
+    expect(cart.cartId).toBe('g1');
+    expect(eldra.cart.updateItem).toHaveBeenLastCalledWith('g1', 'g1', { quantity: 4 });
+    expect(cart.notice?.reason).toBe('guest');
+  });
+});
+
+describe('cart store: the company is the one the server named (S-M1)', () => {
+  it('a company the server could not name is stored as bound, and moved once the company is known', async () => {
+    pricing.value = { ...SIGNED_OUT_PRICING, signedIn: true };
+    pricedFor = () => 'customer';
+    serverFetch.mockResolvedValueOnce({ id: 'c' });
+    carts.c = cartOf('c', [line('n1', 'v1')]);
+    const cart = await store();
+    await cart.addItem('p-v1', 'v1', 1);
+    expect(cart.boundTo).toBe('customer');
+    expect(cart.discountAllowed).toBe(false);
+    expect(cart.checkoutUrl).toBeNull();
+
+    cart.forgetCompanyCart();
+    expect(storage.getItem(CART_KEY)).toBeNull();
+  });
+
+  it('a company the server named over the browser’s stale one is taken as the active company', async () => {
+    pricing.value = signedInAs('c1', 'Acme');
+    pricedFor = () => 'c2';
+    serverFetch.mockResolvedValueOnce({ id: 'new' });
+    carts.new = cartOf('new', [line('n1', 'v1')]);
+    const cart = await store();
+    await cart.addItem('p-v1', 'v1', 1);
+    expect(cart.boundTo).toBe('c2');
+    expect(pricing.value.customerId).toBe('c2');
+    expect(cart.checkoutUrl).toBe('https://checkout.example/new');
+  });
+});
+
+describe('cart store: another tab (S-M6)', () => {
+  it('follows a cart another tab moved instead of writing to the old one', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'a');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    carts.new = cartOf('new', [line('n1', 'v1')]);
+    pricing.value = signedInAs('a');
+    const cart = await store();
+    await cart.loadCart();
+
+    storage.setItem(CART_KEY, 'new');
+    storage.setItem(BOUND_KEY, 'a');
+    for (const listener of storageListeners) listener({ key: CART_KEY });
+    await cart.loadCart();
+
+    expect(cart.cartId).toBe('new');
+    expect(cart.cart?.id).toBe('new');
+    expect(cart.checkoutUrl).toBe('https://checkout.example/new');
   });
 });

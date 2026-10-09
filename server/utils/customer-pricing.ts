@@ -1,7 +1,13 @@
 import type { H3Event } from 'h3';
 import type { EldraCustomerMe, EldraRequestContext } from '@eldrajs/sdk';
 import { dropOrganizationCache } from '~~/app/utils/organization';
-import { meFailure, meRequestContext, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
+import {
+  isSameOriginRequest,
+  meFailure,
+  meRequestContext,
+  needsRefresh,
+  toAccountResponse,
+} from '~~/shared/utils/auth';
 import type { ShopSession } from '~~/shared/utils/auth';
 import {
   activeCompany,
@@ -140,9 +146,10 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
 
 /**
  * A catalog read or a cart write for this request: as the signed-in person and their active
- * company, or as a guest. Sets `private, no-store` first, whatever happens next; retries once as a
- * guest when the person cannot have customer prices here (`runPriced`); answers any other failure
- * with the gateway's status and reason, never its message.
+ * company, or as a guest. Sets `private, no-store` first, whatever happens next; a write must come
+ * from this site's own pages (403 otherwise, as the company choice); retries once as a guest when
+ * the person cannot have customer prices here (`runPriced`); answers any other failure with the
+ * gateway's status and reason, never its message.
  */
 export async function pricedCall<T>(
   event: H3Event,
@@ -153,10 +160,20 @@ export async function pricedCall<T>(
   // Before anything can fail: an error answer is no more cacheable than a price.
   setHeaders({ ...PRICED_RESPONSE_HEADERS });
   const auth = await useShopAuth(event);
+  if (
+    kind === 'write' &&
+    !isSameOriginRequest({
+      secFetchSite: getRequestHeader(event, 'sec-fetch-site'),
+      origin: getRequestHeader(event, 'origin'),
+      requestOrigin: auth.origin,
+    })
+  ) {
+    throw createError({ statusCode: 403, statusMessage: 'Forbidden' });
+  }
   let caller: PricedCaller | null = null;
+  let current: CurrentSession | null = null;
   let sessionId: string | null = null;
   if (auth.enabled) {
-    let current: CurrentSession | null = null;
     try {
       current = await freshShopSession(event, auth);
     } catch (error) {
@@ -184,6 +201,13 @@ export async function pricedCall<T>(
       },
       dropCompany: async () => {
         if (sessionId) await clearActiveCompany(sessionId);
+      },
+      // The gateway priced for the person's only company: name it from the (cached) /me, so the
+      // browser binds its cart to the company the server used, not to its own possibly stale idea.
+      resolveCustomer: async () => {
+        if (!current) return null;
+        const choice = activeCompany(null, (await loadShopMe(event, auth, current)).memberships);
+        return choice.kind === 'only' ? choice.customerId : null;
       },
     });
   } catch (error) {

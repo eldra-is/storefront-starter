@@ -23,6 +23,24 @@ export function errorIdOf(err: unknown): string | undefined {
   return problem?.errorId ?? problem?.code;
 }
 
+/**
+ * The HTTP status of a failed call: the gateway's (EldraHttpError) or this site's route's (`$fetch`
+ * error). Undefined when there was no answer at all (offline, a network failure).
+ */
+export function statusOf(err: unknown): number | undefined {
+  if (err instanceof EldraHttpError) return err.status;
+  if (!err || typeof err !== 'object') return undefined;
+  const { statusCode, status, data } = err as {
+    statusCode?: unknown;
+    status?: unknown;
+    data?: { statusCode?: unknown };
+  };
+  for (const value of [statusCode, status, data?.statusCode]) {
+    if (typeof value === 'number') return value;
+  }
+  return undefined;
+}
+
 /** A missing CMS entry, product or page slug. */
 export function isNotFound(err: unknown): boolean {
   if (err instanceof EldraHttpError) return err.code === 'NOT_FOUND';

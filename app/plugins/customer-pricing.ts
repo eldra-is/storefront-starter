@@ -4,7 +4,8 @@ import { prepareCustomerPricing, type CustomerPricingState } from '~~/shared/uti
 /**
  * On the server, before any page data loads: is this a signed-in business customer, and for which
  * company? A page rendered for someone with a session cookie carries their prices in its HTML and
- * payload, so it is sent `private, no-store` (prepareCustomerPricing); a guest's page is unchanged.
+ * payload, so it is sent `private, no-store` (prepareCustomerPricing). While business login is on
+ * every page also varies on Cookie, so a cache never serves a guest's page to a signed-in browser.
  */
 export default defineNuxtPlugin({
   name: 'eldra-customer-pricing',
@@ -16,6 +17,7 @@ export default defineNuxtPlugin({
       businessLogin: useBusinessLogin().value,
       hasSessionCookie: Boolean(useCookie(sessionCookieName(import.meta.dev)).value),
       setCacheControl: (value) => (useResponseHeader('Cache-Control').value = value),
+      setVary: (value) => (useResponseHeader('Vary').value = value),
       fetchState: () => serverFetch<CustomerPricingState>('/api/auth/pricing'),
     });
   },

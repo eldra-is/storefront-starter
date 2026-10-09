@@ -8,6 +8,8 @@ import {
   boundCompanyOf,
   cartBindingAction,
   cartRefusal,
+  isPermanentLineRefusal,
+  UNKNOWN_COMPANY,
   type CartNotice,
 } from '~~/shared/utils/customer-prices';
 
@@ -32,7 +34,9 @@ interface Written<T> {
  * guest cart once signed in, is moved: its lines are replayed into a new cart for this company and
  * the person is told. A company cart for someone who is now a guest is moved to a guest cart the
  * same way; only an explicit sign-out drops it. The company a cart is bound to is taken from the
- * server's answer (PRICED_FOR_HEADER), never assumed.
+ * server's answer (PRICED_FOR_HEADER), never assumed, and a write never unbinds a cart: a guest
+ * answer for a company cart (a guest may remove a line from one) means the session ended, and the
+ * cart is moved to a guest cart.
  */
 export const useCartStore = defineStore('cart', () => {
   const eldra = useEldraClient();
@@ -97,6 +101,20 @@ export const useCartStore = defineStore('cart', () => {
     if (boundTo.value) forgetCart();
   }
 
+  // Another tab moved or replaced the cart: follow it, rather than writing to (and replaying) the
+  // old one from here, which would duplicate the basket.
+  if (!import.meta.server && typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+      if (event.key !== CART_STORAGE_KEY && event.key !== CART_BOUND_TO_KEY) return;
+      cartId.value = session.read();
+      boundTo.value = binding.read();
+      moveFailed.value = false;
+      notice.value = null;
+      if (!cartId.value) cart.value = null;
+      else void loadCart();
+    });
+  }
+
   /**
    * A write through this site's cart routes. The answer says how it was priced: a guest answer while
    * the browser thought it was signed in means the server session is gone, so the browser buys as a
@@ -108,9 +126,36 @@ export const useCartStore = defineStore('cart', () => {
   ): Promise<Written<T>> {
     const response = await $fetch.raw<T>(url, options as Parameters<typeof $fetch.raw>[1]);
     const header = response.headers.get(PRICED_FOR_HEADER);
-    const boundFor = boundCompanyOf(header, pricing.value.customerId);
+    const boundFor = boundCompanyOf(header);
     if (header === 'guest' && pricing.value.signedIn) pricing.value = { ...SIGNED_OUT_PRICING };
+    else if (boundFor && boundFor !== UNKNOWN_COMPANY && boundFor !== pricing.value.customerId) {
+      // The server priced for another company than the browser thought (its choice was dropped, or
+      // changed in another tab): the server's is the one that holds.
+      pricing.value = {
+        ...pricing.value,
+        customerId: boundFor,
+        customerName: null,
+        needsCompany: false,
+        noCompany: false,
+      };
+    }
     return { data: response._data as T, boundFor };
+  }
+
+  /**
+   * Keeps what a write to an existing cart answered. A write never unbinds a company cart: a guest
+   * answer for one (P3-R7 lets a guest remove a line) means the business session is gone while the
+   * cart is still the company's, so it is moved to a guest cart, with a notice, like any company
+   * cart found for a guest.
+   */
+  async function settleWrite(id: string, boundFor: string | null): Promise<void> {
+    if (boundFor || !boundTo.value) {
+      rememberCart(id, boundFor);
+      return;
+    }
+    if (pricing.value.signedIn) pricing.value = { ...SIGNED_OUT_PRICING };
+    cart.value = null; // re-read: the write changed it
+    await moveCart('guest');
   }
 
   async function postItem(input: EldraAddCartItemInput): Promise<Written<EldraCart>> {
@@ -120,11 +165,20 @@ export const useCartStore = defineStore('cart', () => {
     return { data: await eldra.cart.addItem(input), boundFor: null };
   }
 
+  /** A move that cannot be made now: the old cart (and its binding) stays, without checkout. */
+  function moveNotMade(): false {
+    cart.value = null;
+    moveFailed.value = true;
+    lastError.value = 'CART_MOVE_FAILED';
+    return false;
+  }
+
   /**
    * Moves the cart to who is buying now: replays its lines through add-to-cart into a new cart, so
-   * every line is priced (and stocked) for them, then switches to it and says so. Lines that cannot
-   * be carried over are counted. When none could be, the old cart is kept (nothing is lost), checkout
-   * is withheld and the move is tried again on the next load.
+   * every line is priced (and stocked) for them, then switches to it and says so. Only a line the
+   * shop refuses for good (gone, unavailable, out of stock) is left behind, and counted. Any other
+   * failure (no answer, an outage, a rate limit) abandons the move: the old cart is kept (nothing is
+   * lost), checkout is withheld and the move is tried again on the next load.
    */
   async function moveCart(
     reason: CartNotice['reason'],
@@ -139,10 +193,7 @@ export const useCartStore = defineStore('cart', () => {
           old = await eldra.cart.get(oldId, { locale: locale.value });
         } catch {
           // A read that failed is not an empty cart: keep it and try again later.
-          cart.value = null;
-          moveFailed.value = true;
-          lastError.value = 'CART_MOVE_FAILED';
-          return false;
+          return moveNotMade();
         }
       }
       const lines = old?.items ?? [];
@@ -163,26 +214,28 @@ export const useCartStore = defineStore('cart', () => {
           });
           newId = written.data?.id ?? newId;
           boundFor = written.boundFor;
-        } catch {
+        } catch (err) {
+          if (!isPermanentLineRefusal(statusOf(err), errorIdOf(err))) return moveNotMade();
           missing += 1;
         }
       }
-      if (!newId) {
-        cart.value = null;
-        moveFailed.value = true;
-        lastError.value = 'CART_MOVE_FAILED';
-        return false;
-      }
+      // No new cart although not every line was refused: nothing to switch to, so keep the old one.
+      if (!newId && missing < lines.length) return moveNotMade();
       // A guest cart is priced for nobody, whatever the answer said; a company move the server ran
       // as a guest (the session ended meanwhile) is a guest cart too, and is told as one.
-      const priced = reason === 'company' && boundFor ? 'company' : 'guest';
-      rememberCart(newId, priced === 'company' ? boundFor : null);
+      const priced = reason === 'company' && (boundFor || !newId) ? 'company' : 'guest';
       moveFailed.value = false;
       notice.value = {
         reason: priced,
         companyName: priced === 'company' ? pricing.value.customerName : null,
         missing,
       };
+      if (!newId) {
+        // Every line is refused for good: there is nothing left to carry over.
+        forgetCart();
+        return true;
+      }
+      rememberCart(newId, priced === 'company' ? boundFor : null);
       cart.value = await eldra.cart.get(newId, { locale: locale.value });
       return true;
     } finally {
@@ -245,8 +298,9 @@ export const useCartStore = defineStore('cart', () => {
     const refusal = cartRefusal(errorIdOf(err));
     let moved: boolean;
     if (refusal === 'new-cart-other-company') moved = await moveCart('company');
-    else if (refusal === 'new-cart-sign-in') {
-      // The server no longer has a business session for this browser: buy as a guest from here on.
+    else if (refusal === 'new-cart-sign-in' || refusal === 'customer-prices-off') {
+      // The server no longer has a business session for this browser (it ended, or business login
+      // was switched off and the cart route ended it): buy as a guest from here on.
       pricing.value = { ...SIGNED_OUT_PRICING };
       moved = await moveCart('guest');
     } else return 'no';
@@ -274,6 +328,7 @@ export const useCartStore = defineStore('cart', () => {
       notice.value = null;
       await ensureBuyersCart();
     }
+    const existing = cartId.value;
     let written: Written<EldraCart>;
     try {
       written = await postItem({
@@ -296,7 +351,9 @@ export const useCartStore = defineStore('cart', () => {
       noteRefusal(err);
       throw err;
     }
-    if (written.data?.id) rememberCart(written.data.id, written.boundFor);
+    const id = written.data?.id;
+    if (id && id === existing) await settleWrite(id, written.boundFor);
+    else if (id) rememberCart(id, written.boundFor);
     await loadCart();
     drawerOpen.value = true;
   }
@@ -328,10 +385,10 @@ export const useCartStore = defineStore('cart', () => {
       if (!moved) return;
       line = moved.id;
     }
+    const id = cartId.value;
+    let written: Written<unknown>;
     try {
-      const written = await run(cartId.value, line);
-      // A direct write is a guest's (unbound); a server write says what it was priced for.
-      rememberCart(cartId.value, written.boundFor);
+      written = await run(id, line);
     } catch (err) {
       const move = await moveIfBound(err);
       if (move === 'failed') throw err;
@@ -345,6 +402,8 @@ export const useCartStore = defineStore('cart', () => {
       noteRefusal(err);
       throw err;
     }
+    // A direct write is a guest's (unbound); a server write says what it was priced for.
+    await settleWrite(id, written.boundFor);
   }
 
   const itemPath = (id: string, itemId: string) =>

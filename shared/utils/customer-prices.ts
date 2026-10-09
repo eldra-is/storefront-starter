@@ -23,6 +23,12 @@ export const PRICED_RESPONSE_HEADERS = {
 /** What a signed-in page render sends: it carries one person's prices in its HTML and payload. */
 export const SIGNED_IN_PAGE_CACHE_CONTROL = 'private, no-store';
 
+/**
+ * What every page render sends while business login is on, guests' too: a shared cache that keeps a
+ * guest's page must not hand it to a signed-in browser (it would say "guest" and move their cart).
+ */
+export const PAGE_VARY = 'Cookie';
+
 /** The person behind a priced call, from the server session. Null is a guest. */
 export interface PricedCaller {
   accessToken: string;
@@ -46,8 +52,9 @@ export function pricedContext(caller: PricedCaller | null): EldraRequestContext 
 
 /**
  * What to do when a signed-in priced call fails, read by the gateway's `errorId`:
- * - `end-session`: business login is off (`FEATURE_DISABLED`) or the token is no good (401). The
- *   session is ended and the call made once more as a guest.
+ * - `end-session`: business login is off (`FEATURE_DISABLED`, or `CART_CUSTOMER_PRICES_OFF` on a
+ *   write to a company cart) or the token is no good (401). The session is ended and the call made
+ *   once more as a guest.
  * - `drop-company`: the stored company is no longer one of the person's (`SHOP_CUSTOMER_NOT_MEMBER`).
  *   It is forgotten and the call made once more without it.
  * - `guest`: the person has no company (`SHOP_NO_MEMBERSHIP`), or, on a read, has several and has
@@ -62,6 +69,7 @@ export function pricedFailure(error: unknown, kind: 'read' | 'write'): PricedFai
   const { status, errorId } = (error ?? {}) as { status?: unknown; errorId?: unknown };
   if (status === 401) return 'end-session';
   if (status === 403 && errorId === 'FEATURE_DISABLED') return 'end-session';
+  if (status === 409 && errorId === 'CART_CUSTOMER_PRICES_OFF') return 'end-session';
   if (status === 403 && errorId === 'SHOP_CUSTOMER_NOT_MEMBER') return 'drop-company';
   if (status === 403 && errorId === 'SHOP_NO_MEMBERSHIP') return 'guest';
   if (status === 409 && errorId === 'SHOP_CUSTOMER_REQUIRED' && kind === 'read') return 'guest';
@@ -78,7 +86,15 @@ export interface PricedRun<T> {
   endSession: (reason: { featureDisabled: boolean }) => Promise<void>;
   /** Forgets the stored active company. */
   dropCompany: () => Promise<void>;
+  /**
+   * The company a signed-in call sent without `X-Customer-Id` was priced for (the gateway used the
+   * person's only company), so PRICED_FOR_HEADER names it; null when it cannot be told.
+   */
+  resolveCustomer?: () => Promise<string | null>;
 }
+
+/** Business login is off: the organization cache is stale and the session must end. */
+const B2B_OFF_ERRORS = new Set(['FEATURE_DISABLED', 'CART_CUSTOMER_PRICES_OFF']);
 
 /**
  * Runs a priced call: as the signed-in person when there is one, else as a guest. A refusal that
@@ -91,7 +107,13 @@ export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
   // only when the server really wrote as that company.
   const as = async (caller: PricedCaller | null): Promise<T> => {
     const result = await run.call(pricedContext(caller));
-    run.setHeaders({ [PRICED_FOR_HEADER]: pricedFor(caller) });
+    let customerId = caller?.customerId ?? null;
+    if (caller?.accessToken && !customerId && run.resolveCustomer) {
+      customerId = await run.resolveCustomer().catch(() => null);
+    }
+    run.setHeaders({
+      [PRICED_FOR_HEADER]: pricedFor(caller && { ...caller, customerId }),
+    });
     return result;
   };
   if (!pricedContext(run.caller) || !run.caller) return as(null);
@@ -101,7 +123,7 @@ export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
     const failure = pricedFailure(error, run.kind);
     if (failure === 'end-session') {
       const { errorId } = (error ?? {}) as { errorId?: unknown };
-      await run.endSession({ featureDisabled: errorId === 'FEATURE_DISABLED' });
+      await run.endSession({ featureDisabled: B2B_OFF_ERRORS.has(String(errorId)) });
       return as(null);
     }
     if (failure === 'guest') return as(null);
@@ -122,26 +144,27 @@ export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
 
 /**
  * The header a priced route answers with: `guest` when the call ran as a guest (no session, or the
- * session ended or had no company), else the company it ran for (`customer` when the gateway chose
- * the person's only company itself).
+ * session ended or had no company), else the company the server priced it for. `customer`
+ * (UNKNOWN_COMPANY) says it was priced for a company the server could not name.
  */
 export const PRICED_FOR_HEADER = 'X-Eldra-Priced-For';
 
+/** Bound to a company the server could not name: treated as bound, and as nobody's company. */
+export const UNKNOWN_COMPANY = 'customer';
+
 export function pricedFor(caller: PricedCaller | null): string {
   if (!caller?.accessToken) return 'guest';
-  return caller.customerId || 'customer';
+  return caller.customerId || UNKNOWN_COMPANY;
 }
 
 /**
  * The company a cart write was priced for, from PRICED_FOR_HEADER: null for a guest write (or no
- * header: a direct call), the named company, or the active company for `customer`.
+ * header: a direct call), else the company the server named, or UNKNOWN_COMPANY. Never the
+ * browser's own idea of the active company, which can be stale.
  */
-export function boundCompanyOf(
-  header: string | null | undefined,
-  activeCustomerId: string | null
-): string | null {
+export function boundCompanyOf(header: string | null | undefined): string | null {
   if (!header || header === 'guest') return null;
-  return header === 'customer' ? activeCustomerId : header;
+  return header;
 }
 
 /** The status and the gateway's reason of a failed call, for a route to answer with (never the message). */
@@ -242,6 +265,8 @@ export type CartRefusal =
   | 'prices-unavailable'
   | 'discount-not-for-customer-prices'
   | 'out-of-stock'
+  /** Business login was switched off: company prices are gone, so the cart moves to a guest cart. */
+  | 'customer-prices-off'
   | null;
 
 export function cartRefusal(errorId: string | undefined): CartRefusal {
@@ -250,6 +275,9 @@ export function cartRefusal(errorId: string | undefined): CartRefusal {
       return 'new-cart-other-company';
     case 'CART_SIGN_IN_REQUIRED':
       return 'new-cart-sign-in';
+    case 'CART_CUSTOMER_PRICES_OFF':
+    case 'ORDER_CUSTOMER_PRICES_OFF':
+      return 'customer-prices-off';
     case 'SHOP_CUSTOMER_REQUIRED':
       return 'company-required';
     case 'CART_PRICES_UNAVAILABLE':
@@ -264,6 +292,40 @@ export function cartRefusal(errorId: string | undefined): CartRefusal {
     default:
       return null;
   }
+}
+
+/**
+ * Refusals of a cart as a whole, or of who is buying, rather than of one line: they say nothing
+ * about whether the line itself can ever be added.
+ */
+const NOT_LINE_REFUSALS = new Set([
+  'CART_NOT_FOUND',
+  'CART_VERSION_CONFLICT',
+  'CART_CUSTOMER_MISMATCH',
+  'CART_SIGN_IN_REQUIRED',
+  'CART_CUSTOMER_PRICES_OFF',
+  'SHOP_CUSTOMER_REQUIRED',
+]);
+const LINE_REFUSALS = new Set([
+  'CART_INSUFFICIENT_STOCK',
+  'CART_INVALID_PRODUCT_ID',
+  'CART_INVALID_VARIANT_ID',
+  'CART_INVALID_QUANTITY',
+]);
+
+/**
+ * Whether an add-to-cart failure refuses that line for good: the variant is gone, unavailable or out
+ * of stock (404, 409 or 422 about the product, or the cart's own invalid-line reasons). Anything else
+ * (no answer, 5xx, 429, `CART_PRICES_UNAVAILABLE`, a refusal of the cart or of the buyer) may pass,
+ * so a cart move must not count the line as lost.
+ */
+export function isPermanentLineRefusal(
+  status: number | undefined,
+  errorId: string | undefined
+): boolean {
+  if (errorId && LINE_REFUSALS.has(errorId)) return true;
+  if (errorId && NOT_LINE_REFUSALS.has(errorId)) return false;
+  return status === 404 || status === 409 || status === 422;
 }
 
 /** A single string query value, else undefined (a repeated or missing parameter is ignored). */
@@ -369,6 +431,7 @@ export function cartNoticeMessage(
  *   drops the company cart instead, so a shared device keeps nothing.)
  * - `wait`: signed in but the company cannot be known (none chosen yet, or the account could not be
  *   read): the cart is not shown and cannot be checked out until it can.
+ * A cart bound to UNKNOWN_COMPANY counts as bound: it moves once the buyer's company is known.
  */
 export type CartBindingAction = 'keep' | 'move' | 'to-guest' | 'wait';
 
@@ -391,20 +454,25 @@ export function cartBindingAction(
 /**
  * The server render's pricing state (plugins/customer-pricing.ts): a browser with a session cookie
  * gets `private, no-store` on the page before anything priced is read, then the state the server
- * session holds. A guest's render is left alone.
+ * session holds; a state that cannot be read is "signed in, company unknown", never a guest. While
+ * business login is on every page varies on Cookie; otherwise a guest's render is left alone.
  */
 export async function prepareCustomerPricing(deps: {
   businessLogin: boolean;
   hasSessionCookie: boolean;
   setCacheControl: (value: string) => void;
+  setVary: (value: string) => void;
   fetchState: () => Promise<CustomerPricingState>;
 }): Promise<CustomerPricingState> {
-  if (!deps.businessLogin || !deps.hasSessionCookie) return { ...SIGNED_OUT_PRICING };
+  if (!deps.businessLogin) return { ...SIGNED_OUT_PRICING };
+  deps.setVary(PAGE_VARY);
+  if (!deps.hasSessionCookie) return { ...SIGNED_OUT_PRICING };
   deps.setCacheControl(SIGNED_IN_PAGE_CACHE_CONTROL);
   try {
     return { ...SIGNED_OUT_PRICING, ...(await deps.fetchState()) };
   } catch {
-    return { ...SIGNED_OUT_PRICING };
+    // Not known, not a guest: the cart waits (no move, no checkout) and the routes decide per call.
+    return { ...SIGNED_OUT_PRICING, signedIn: true };
   }
 }
 
