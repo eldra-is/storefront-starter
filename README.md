@@ -56,7 +56,7 @@ Deployment notes:
 
 - Run more than one server instance, or want sign-ins to survive a restart: use `redis`. The in-memory store keeps at most 10,000 sessions and logins in flight per server.
 - Keep **Revoke refresh token** off in the shop realm (it is off in the realm Eldra provisions). With it on, two requests refreshing one session on different servers spend the same refresh token and the loser is signed out.
-- Behind a proxy that terminates TLS (the server sees `http://storefront:3000`), set `NUXT_TRUST_PROXY=true`, or sign-in sends Keycloak the wrong return address and sign-out is refused. Only do it when the proxy sets those headers itself.
+- Behind a proxy that terminates TLS (the server sees `http://storefront:3000`), set `NUXT_TRUST_PROXY=true`, or sign-in sends Keycloak the wrong return address and sign-out is refused. Only do it when the proxy overwrites (never appends to) any `X-Forwarded-Host` and `X-Forwarded-Proto` the client sent, because the first value is the one trusted.
 - A production build served over plain `http://localhost` (for example `pnpm preview` for e2e) still names its cookies `__Host-eldra_session` and `__Secure-eldra_login`, which must be `Secure`. Chromium and Firefox accept that on localhost; Safari and WebKit refuse the cookies, so sign-in silently fails there. Run local e2e against `pnpm dev` or over https.
 - Rotating the client secret in Studio ends it at once in Keycloak: set the new `NUXT_SHOP_CLIENT_SECRET` and restart straight away. Until then sign-ins fail, and anyone signed in is signed out at their next refresh.
 
