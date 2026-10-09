@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@eldrajs/rich-text": "^0.1.0",
-    "@eldrajs/sdk": "^0.2.7",
+    "@eldrajs/sdk": "^0.2.8",
     "@eldrajs/vue": "^0.1.0",
     "@nuxtjs/i18n": "^10.6.0",
     "@phosphor-icons/vue": "^2.2.1",
