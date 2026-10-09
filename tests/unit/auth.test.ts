@@ -8,7 +8,8 @@ import {
   isSessionId,
   meFailure,
   freshMe,
-  withoutMe,
+  meKey,
+  sessionKey,
   ME_CACHE_MS,
   mergeRefreshed,
   refreshFailure,
@@ -351,36 +352,20 @@ describe('freshMe', () => {
   const now = 1_000_000;
 
   it('returns the cached answer for under 30 seconds', () => {
-    expect(freshMe({ me: { value, fetchedAt: now - 29_999 } }, now)).toBe(value);
-    expect(freshMe({ me: { value, fetchedAt: now } }, now)).toBe(value);
+    expect(freshMe({ value, fetchedAt: now - 29_999 }, now)).toBe(value);
+    expect(freshMe({ value, fetchedAt: now }, now)).toBe(value);
   });
 
   it('returns null at 30 seconds, when empty, or when the clock went backwards', () => {
-    expect(freshMe({ me: { value, fetchedAt: now - ME_CACHE_MS } }, now)).toBeNull();
-    expect(freshMe({}, now)).toBeNull();
-    expect(freshMe({ me: { value, fetchedAt: now + 1 } }, now)).toBeNull();
+    expect(freshMe({ value, fetchedAt: now - ME_CACHE_MS }, now)).toBeNull();
+    expect(freshMe(null, now)).toBeNull();
+    expect(freshMe(undefined, now)).toBeNull();
+    expect(freshMe({ value, fetchedAt: now + 1 }, now)).toBeNull();
   });
 
-  it('is dropped by withoutMe and by a token refresh', () => {
-    const session = {
-      issuer: 'i',
-      accessToken: 'a',
-      refreshToken: 'r',
-      idToken: 'id',
-      expiresAt: now,
-      refreshExpiresAt: undefined,
-      me: { value, fetchedAt: now },
-    };
-    expect(withoutMe(session)).not.toHaveProperty('me');
-    expect(
-      mergeRefreshed(session, {
-        accessToken: 'a2',
-        refreshToken: 'r2',
-        idToken: 'id2',
-        expiresAt: now + 300_000,
-        refreshExpiresAt: undefined,
-      } as never)
-    ).not.toHaveProperty('me');
+  it('keys the cache apart from the session record', () => {
+    expect(meKey('abc')).toBe('me:abc');
+    expect(meKey('abc')).not.toBe(sessionKey('abc'));
   });
 });
 

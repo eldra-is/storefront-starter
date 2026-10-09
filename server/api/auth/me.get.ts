@@ -1,11 +1,11 @@
 import { bearer, type EldraCustomerMe } from '@eldrajs/sdk';
-import { freshMe, meFailure, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
+import { meFailure, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
 
 /**
  * The signed-in business customer and their companies. 401: signed out (or the session just ended);
  * 403: signed in without a company in this organization; 404: business login is off (the gateway's
  * FEATURE_DISABLED); 503: the gateway cannot check right now. A successful answer is kept on the
- * session for 30 s, so repeated page views do not each spend the gateway's rate limit.
+ * session under its own key for 30 s, so repeated page views do not each spend the gateway's rate limit.
  */
 export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
   authResponseHeaders(event);
@@ -16,7 +16,7 @@ export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
   if (!current) throw createError({ statusCode: 401, statusMessage: 'Signed out' });
   let { session } = current;
 
-  const cached = freshMe(session, Date.now());
+  const cached = await readCachedMe(current.sessionId);
   if (cached) return toAccountResponse(cached);
 
   if (needsRefresh(session, Date.now())) {
@@ -29,7 +29,7 @@ export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
           ? error.failure
           : { statusCode: 502 as const, endSession: false };
       if (failure.endSession) await endShopSession(event);
-      else await clearShopMe(current.sessionId);
+      await clearShopMe(current.sessionId);
       throw createError({ statusCode: failure.statusCode });
     }
   }
@@ -38,12 +38,12 @@ export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
     const me = toAccountResponse(
       await auth.eldra.customer.me({ headers: bearer(session.accessToken) })
     );
-    await cacheShopMe(current.sessionId, session, me);
+    await cacheShopMe(current.sessionId, me);
     return me;
   } catch (error) {
     const failure = meFailure(error);
     if (failure.endSession) await endShopSession(event);
-    else await clearShopMe(current.sessionId);
+    await clearShopMe(current.sessionId);
     throw createError({ statusCode: failure.statusCode });
   }
 });

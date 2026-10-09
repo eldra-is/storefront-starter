@@ -37,30 +37,25 @@ export type ShopSession = Pick<
 > & {
   /** The issuer that signed these tokens: refresh and logout go back to it, whatever config says now. */
   issuer: string;
-  /** The last successful `/me` answer, kept for `ME_CACHE_MS` so page views do not each call the gateway. */
-  me?: CachedMe;
 };
 
+/** A successful `/me` answer, kept under its own key (`meKey`), never on the session record. */
 export interface CachedMe {
   value: EldraCustomerMe;
   fetchedAt: number;
 }
 
-/** Matches the gateway's own membership cache: a fresher answer would not be fresher. */
+/**
+ * How long a `/me` answer is reused. The gateway caches membership for 30 s too, so what a page shows
+ * can be about 60 s behind; the gateway still checks membership on every business call.
+ */
 export const ME_CACHE_MS = 30_000;
 
 /** The cached `/me` answer when it is under `ME_CACHE_MS` old (and not from the future), else null. */
-export function freshMe(session: Pick<ShopSession, 'me'>, now: number): EldraCustomerMe | null {
-  const cached = session.me;
+export function freshMe(cached: CachedMe | null | undefined, now: number): EldraCustomerMe | null {
   if (!cached || typeof cached.fetchedAt !== 'number') return null;
   const age = now - cached.fetchedAt;
   return age >= 0 && age < ME_CACHE_MS ? cached.value : null;
-}
-
-/** The session without its cached `/me` answer. */
-export function withoutMe(session: ShopSession): ShopSession {
-  const { me: _me, ...rest } = session;
-  return rest;
 }
 
 /** Stored under a login id until the callback takes it (single use). */
@@ -72,6 +67,7 @@ export interface PendingLogin {
 }
 
 export const sessionKey = (sessionId: string) => `session:${sessionId}`;
+export const meKey = (sessionId: string) => `me:${sessionId}`;
 export const loginKey = (loginId: string) => `login:${loginId}`;
 
 function base64Url(bytes: Uint8Array): string {
@@ -182,7 +178,6 @@ export function mergeRefreshed(previous: ShopSession, tokens: EldraOidcTokens): 
     idToken: tokens.idToken || previous.idToken,
     expiresAt: tokens.expiresAt,
     refreshExpiresAt: tokens.refreshExpiresAt ?? previous.refreshExpiresAt,
-    // New tokens, new identity check: the cached answer is dropped.
   };
 }
 

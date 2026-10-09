@@ -8,6 +8,8 @@ export const MEMORY_SESSION_MAX_ENTRIES = 10_000;
  * can only push out other pending logins, never a session.
  */
 export const MEMORY_LOGIN_MAX_ENTRIES = 2_000;
+/** Cached `/me` answers likewise: they can only push out each other, never a session. */
+export const MEMORY_ME_MAX_ENTRIES = 2_000;
 /** Expired records are swept this often, so abandoned logins do not wait for a read to leave. */
 export const MEMORY_SESSION_SWEEP_MS = 5 * 60 * 1000;
 
@@ -17,7 +19,10 @@ export const MEMORY_SESSION_SWEEP_MS = 5 * 60 * 1000;
  */
 export const boundedMemoryDriver = defineDriver(() => {
   const store = new PartitionedTtlStore({
-    partitions: [{ prefix: 'login:', maxEntries: MEMORY_LOGIN_MAX_ENTRIES }],
+    partitions: [
+      { prefix: 'login:', maxEntries: MEMORY_LOGIN_MAX_ENTRIES },
+      { prefix: 'me:', maxEntries: MEMORY_ME_MAX_ENTRIES },
+    ],
     defaultMaxEntries: MEMORY_SESSION_MAX_ENTRIES,
   });
   const sweeper = setInterval(() => store.sweep(), MEMORY_SESSION_SWEEP_MS);

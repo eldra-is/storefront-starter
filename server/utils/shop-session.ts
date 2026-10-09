@@ -14,7 +14,10 @@ import {
   sessionCookieName,
   sessionKey,
   sessionTtlSeconds,
-  withoutMe,
+  meKey,
+  freshMe,
+  ME_CACHE_MS,
+  type CachedMe,
   type AuthFailure,
   type PendingLogin,
   type ShopSession,
@@ -78,7 +81,10 @@ export async function readShopSession(
 /** Stores the session under a NEW id (never one the browser had before) and sets the cookie. */
 export async function startShopSession(event: H3Event, session: ShopSession): Promise<void> {
   const previous = getCookie(event, SESSION_COOKIE);
-  if (isSessionId(previous)) await store().removeItem(sessionKey(previous));
+  if (isSessionId(previous)) {
+    await store().removeItem(sessionKey(previous));
+    await clearShopMe(previous);
+  }
   await saveShopSession(event, randomId(), session);
 }
 
@@ -91,29 +97,40 @@ export async function saveShopSession(
   setCookie(event, SESSION_COOKIE, sessionId, cookieOptions('/', ttl));
 }
 
-/**
- * Remembers a successful `/me` answer on the stored session. Only when the stored session still holds
- * this request's refresh token: if another request rotated it meanwhile, its record is not overwritten.
- */
-export async function cacheShopMe(
-  sessionId: string,
-  session: ShopSession,
-  me: EldraCustomerMe
-): Promise<void> {
-  const stored = await readStored(sessionId);
-  if (!stored || stored.refreshToken !== session.refreshToken) return;
-  await storeSession(sessionId, { ...stored, me: { value: me, fetchedAt: Date.now() } });
+/** The cached `/me` answer if still fresh. Best effort: a storage failure is a miss. */
+export async function readCachedMe(sessionId: string): Promise<EldraCustomerMe | null> {
+  try {
+    return freshMe(await get<CachedMe>(meKey(sessionId)), Date.now());
+  } catch {
+    console.warn('[auth] could not read the cached me answer');
+    return null;
+  }
 }
 
-/** Drops the cached `/me` answer (after a failed refresh or `/me`); the session itself stays. */
+/** Keeps a successful `/me` answer under its own key for 30 s. The session record is never touched. */
+export async function cacheShopMe(sessionId: string, me: EldraCustomerMe): Promise<void> {
+  try {
+    await put<CachedMe>(meKey(sessionId), { value: me, fetchedAt: Date.now() }, ME_CACHE_MS / 1000);
+  } catch {
+    console.warn('[auth] could not cache the me answer');
+  }
+}
+
+/** Drops the cached `/me` answer. Best effort. */
 export async function clearShopMe(sessionId: string): Promise<void> {
-  const stored = await readStored(sessionId);
-  if (stored?.me) await storeSession(sessionId, withoutMe(stored));
+  try {
+    await store().removeItem(meKey(sessionId));
+  } catch {
+    console.warn('[auth] could not clear the cached me answer');
+  }
 }
 
 export async function endShopSession(event: H3Event): Promise<void> {
   const sessionId = getCookie(event, SESSION_COOKIE);
-  if (isSessionId(sessionId)) await store().removeItem(sessionKey(sessionId));
+  if (isSessionId(sessionId)) {
+    await store().removeItem(sessionKey(sessionId));
+    await clearShopMe(sessionId);
+  }
   deleteCookie(event, SESSION_COOKIE, cookieOptions('/', 0));
 }
 
@@ -174,6 +191,7 @@ async function refreshOnce(
     });
     const next = mergeRefreshed(session, tokens);
     await storeSession(sessionId, next);
+    await clearShopMe(sessionId);
     return next;
   } catch (error) {
     if (!(error instanceof EldraOidcError) || error.error !== 'invalid_grant') {
@@ -187,6 +205,7 @@ async function refreshOnce(
     if (step.kind === 'use') return step.session;
     if (step.kind === 'retry') return refreshOnce(sessionId, step.session, client, true);
     if (step.failure.endSession) await store().removeItem(sessionKey(sessionId));
+    await clearShopMe(sessionId);
     throw new SessionRefreshError(step.failure);
   }
 }
