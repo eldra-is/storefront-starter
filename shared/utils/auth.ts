@@ -37,7 +37,31 @@ export type ShopSession = Pick<
 > & {
   /** The issuer that signed these tokens: refresh and logout go back to it, whatever config says now. */
   issuer: string;
+  /** The last successful `/me` answer, kept for `ME_CACHE_MS` so page views do not each call the gateway. */
+  me?: CachedMe;
 };
+
+export interface CachedMe {
+  value: EldraCustomerMe;
+  fetchedAt: number;
+}
+
+/** Matches the gateway's own membership cache: a fresher answer would not be fresher. */
+export const ME_CACHE_MS = 30_000;
+
+/** The cached `/me` answer when it is under `ME_CACHE_MS` old (and not from the future), else null. */
+export function freshMe(session: Pick<ShopSession, 'me'>, now: number): EldraCustomerMe | null {
+  const cached = session.me;
+  if (!cached || typeof cached.fetchedAt !== 'number') return null;
+  const age = now - cached.fetchedAt;
+  return age >= 0 && age < ME_CACHE_MS ? cached.value : null;
+}
+
+/** The session without its cached `/me` answer. */
+export function withoutMe(session: ShopSession): ShopSession {
+  const { me: _me, ...rest } = session;
+  return rest;
+}
 
 /** Stored under a login id until the callback takes it (single use). */
 export interface PendingLogin {
@@ -158,6 +182,7 @@ export function mergeRefreshed(previous: ShopSession, tokens: EldraOidcTokens): 
     idToken: tokens.idToken || previous.idToken,
     expiresAt: tokens.expiresAt,
     refreshExpiresAt: tokens.refreshExpiresAt ?? previous.refreshExpiresAt,
+    // New tokens, new identity check: the cached answer is dropped.
   };
 }
 
@@ -175,7 +200,7 @@ export function callbackCode(
 }
 
 export interface AuthFailure {
-  statusCode: 401 | 403 | 502;
+  statusCode: 401 | 403 | 404 | 502 | 503;
   /** Delete the stored session and clear the cookie. */
   endSession: boolean;
 }
@@ -188,11 +213,24 @@ export function refreshFailure(error: unknown): AuthFailure {
     : { statusCode: 502, endSession: false };
 }
 
-/** A failed `customer.me`: 401 SHOP_TOKEN_INVALID signs out, 403 SHOP_NO_MEMBERSHIP keeps the session. */
+/**
+ * A failed `customer.me`, read by the gateway's `errorId` (the status alone is not specific enough):
+ * - 401: the session ends (`SHOP_TOKEN_INVALID`).
+ * - `FEATURE_DISABLED`: business login is off; the session is left alone (answers 404, as before).
+ * - `SHOP_NO_MEMBERSHIP`: signed in without a company; the session stays (403).
+ * - `SHOP_LOGIN_UNAVAILABLE` or any 503: the gateway cannot check right now; the session stays (503).
+ * - Anything else, including a 403 or 404 with an unknown or missing `errorId`: a transient error
+ *   (502) with the session kept. That fails closed: nothing is shown as access or as a company, a
+ *   gateway we cannot read does not sign anyone out, and the next request simply asks again.
+ */
 export function meFailure(error: unknown): AuthFailure {
-  const status = (error as { status?: unknown } | null)?.status;
+  const { status, errorId } = (error ?? {}) as { status?: unknown; errorId?: unknown };
   if (status === 401) return { statusCode: 401, endSession: true };
-  if (status === 403) return { statusCode: 403, endSession: false };
+  if (status === 403 && errorId === 'FEATURE_DISABLED')
+    return { statusCode: 404, endSession: false };
+  if (status === 403 && errorId === 'SHOP_NO_MEMBERSHIP')
+    return { statusCode: 403, endSession: false };
+  if (status === 503) return { statusCode: 503, endSession: false };
   return { statusCode: 502, endSession: false };
 }
 

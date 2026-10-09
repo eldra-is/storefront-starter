@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3';
-import { EldraOidcError, refreshTokens } from '@eldrajs/sdk';
+import { EldraOidcError, refreshTokens, type EldraCustomerMe } from '@eldrajs/sdk';
 import {
   LOGIN_TTL_SECONDS,
   SESSION_STORAGE,
@@ -14,6 +14,7 @@ import {
   sessionCookieName,
   sessionKey,
   sessionTtlSeconds,
+  withoutMe,
   type AuthFailure,
   type PendingLogin,
   type ShopSession,
@@ -88,6 +89,26 @@ export async function saveShopSession(
 ): Promise<void> {
   const ttl = await storeSession(sessionId, session);
   setCookie(event, SESSION_COOKIE, sessionId, cookieOptions('/', ttl));
+}
+
+/**
+ * Remembers a successful `/me` answer on the stored session. Only when the stored session still holds
+ * this request's refresh token: if another request rotated it meanwhile, its record is not overwritten.
+ */
+export async function cacheShopMe(
+  sessionId: string,
+  session: ShopSession,
+  me: EldraCustomerMe
+): Promise<void> {
+  const stored = await readStored(sessionId);
+  if (!stored || stored.refreshToken !== session.refreshToken) return;
+  await storeSession(sessionId, { ...stored, me: { value: me, fetchedAt: Date.now() } });
+}
+
+/** Drops the cached `/me` answer (after a failed refresh or `/me`); the session itself stays. */
+export async function clearShopMe(sessionId: string): Promise<void> {
+  const stored = await readStored(sessionId);
+  if (stored?.me) await storeSession(sessionId, withoutMe(stored));
 }
 
 export async function endShopSession(event: H3Event): Promise<void> {

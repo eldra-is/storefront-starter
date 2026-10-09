@@ -7,6 +7,9 @@ import {
   callbackCode,
   isSessionId,
   meFailure,
+  freshMe,
+  withoutMe,
+  ME_CACHE_MS,
   mergeRefreshed,
   refreshFailure,
   needsRefresh,
@@ -199,6 +202,7 @@ describe('accountState', () => {
     expect(accountState(404)).toBe('unavailable');
     expect(accountState(500)).toBe('error');
     expect(accountState(502)).toBe('error');
+    expect(accountState(503)).toBe('error');
   });
 });
 
@@ -290,14 +294,93 @@ describe('refreshFailure', () => {
 });
 
 describe('meFailure', () => {
-  it('signs out on 401 and keeps the session on 403', () => {
+  const refusal = (status: number, errorId?: string) => ({ status, errorId });
+
+  it('signs out on 401', () => {
+    expect(meFailure(refusal(401, 'SHOP_TOKEN_INVALID'))).toEqual({
+      statusCode: 401,
+      endSession: true,
+    });
     expect(meFailure({ status: 401 })).toEqual({ statusCode: 401, endSession: true });
-    expect(meFailure({ status: 403 })).toEqual({ statusCode: 403, endSession: false });
+  });
+
+  it('reads business login being off from FEATURE_DISABLED and keeps the session', () => {
+    expect(meFailure(refusal(403, 'FEATURE_DISABLED'))).toEqual({
+      statusCode: 404,
+      endSession: false,
+    });
+  });
+
+  it('reads no company from SHOP_NO_MEMBERSHIP and keeps the session', () => {
+    expect(meFailure(refusal(403, 'SHOP_NO_MEMBERSHIP'))).toEqual({
+      statusCode: 403,
+      endSession: false,
+    });
+  });
+
+  it('keeps the session and reports unavailable on 503', () => {
+    expect(meFailure(refusal(503, 'SHOP_LOGIN_UNAVAILABLE'))).toEqual({
+      statusCode: 503,
+      endSession: false,
+    });
+    expect(meFailure(refusal(503))).toEqual({ statusCode: 503, endSession: false });
+  });
+
+  it('fails closed on a 403 or 404 it cannot read: a transient error, session kept', () => {
+    for (const status of [403, 404]) {
+      expect(meFailure(refusal(status))).toEqual({ statusCode: 502, endSession: false });
+      expect(meFailure(refusal(status, 'SOMETHING_NEW'))).toEqual({
+        statusCode: 502,
+        endSession: false,
+      });
+    }
   });
 
   it('reports anything else as a bad gateway', () => {
     expect(meFailure({ status: 500 })).toEqual({ statusCode: 502, endSession: false });
     expect(meFailure(new Error('network'))).toEqual({ statusCode: 502, endSession: false });
+    expect(meFailure(null)).toEqual({ statusCode: 502, endSession: false });
+  });
+});
+
+describe('freshMe', () => {
+  const value = {
+    shopUser: { id: 'u', email: 'a@b.is', firstName: 'A', lastName: 'B' },
+    memberships: [],
+  };
+  const now = 1_000_000;
+
+  it('returns the cached answer for under 30 seconds', () => {
+    expect(freshMe({ me: { value, fetchedAt: now - 29_999 } }, now)).toBe(value);
+    expect(freshMe({ me: { value, fetchedAt: now } }, now)).toBe(value);
+  });
+
+  it('returns null at 30 seconds, when empty, or when the clock went backwards', () => {
+    expect(freshMe({ me: { value, fetchedAt: now - ME_CACHE_MS } }, now)).toBeNull();
+    expect(freshMe({}, now)).toBeNull();
+    expect(freshMe({ me: { value, fetchedAt: now + 1 } }, now)).toBeNull();
+  });
+
+  it('is dropped by withoutMe and by a token refresh', () => {
+    const session = {
+      issuer: 'i',
+      accessToken: 'a',
+      refreshToken: 'r',
+      idToken: 'id',
+      expiresAt: now,
+      refreshExpiresAt: undefined,
+      me: { value, fetchedAt: now },
+    };
+    expect(withoutMe(session)).not.toHaveProperty('me');
+    expect(
+      mergeRefreshed(session, {
+        accessToken: 'a2',
+        refreshToken: 'r2',
+        idToken: 'id2',
+        expiresAt: now + 300_000,
+        refreshExpiresAt: undefined,
+      } as never)
+    ).not.toHaveProperty('me');
   });
 });
 
