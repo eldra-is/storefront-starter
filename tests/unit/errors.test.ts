@@ -77,3 +77,25 @@ describe('isCartGone', () => {
     expect(readCart).not.toHaveBeenCalled();
   });
 });
+
+describe('priced route errors', () => {
+  // What $fetch throws for a server/api/catalog or server/api/cart refusal: data is the h3 body.
+  const routeError = (statusCode: number, data: Record<string, string>) =>
+    Object.assign(new Error('FetchError'), { data: { statusCode, data } });
+
+  it('reads the gateway reason a route passed on', () => {
+    expect(
+      errorIdOf(routeError(409, { errorId: 'CART_CUSTOMER_MISMATCH', code: 'CONFLICT' }))
+    ).toBe('CART_CUSTOMER_MISMATCH');
+    expect(errorIdOf(routeError(409, { code: 'CONFLICT' }))).toBe('CONFLICT');
+    expect(isOutOfStock(routeError(409, { errorId: 'CART_INSUFFICIENT_STOCK' }))).toBe(true);
+  });
+
+  it('recognizes a missing product behind a route', () => {
+    expect(isNotFound(routeError(404, { code: 'NOT_FOUND' }))).toBe(true);
+    expect(isNotFound(routeError(502, {}))).toBe(false);
+    expect(isCartNotFound(routeError(404, { errorId: 'CART_NOT_FOUND', code: 'NOT_FOUND' }))).toBe(
+      true
+    );
+  });
+});

@@ -51,5 +51,17 @@
   "roleBuyer": "Kaupandi",
   "roleAdmin": "Stjórnandi",
   "invited": "Boð óstaðfest",
-  "email": "Netfang"
+  "email": "Netfang",
+  "companyPrice": "Verð fyrirtækisins þíns",
+  "listPrice": "Listaverð",
+  "chooseCompanyNotice": "Veldu fyrirtækið sem þú kaupir fyrir til að sjá verð þess.",
+  "chooseCompany": "Velja fyrirtæki",
+  "buyingFor": "Kaupir fyrir",
+  "buyForCompany": "Kaupa fyrir þetta fyrirtæki",
+  "companyChanged": "Verð birtast nú fyrir fyrirtækið sem þú valdir.",
+  "newCartOtherCompany": "Karfan þín tilheyrði öðru fyrirtæki, svo ný karfa var stofnuð fyrir fyrirtækið sem þú kaupir fyrir.",
+  "newCartSignIn": "Sú karfa var verðlögð fyrir fyrirtæki og krefst innskráningar, svo ný karfa var stofnuð.",
+  "companyRequired": "Veldu fyrst fyrirtækið sem þú kaupir fyrir á aðgangssíðunni.",
+  "pricesUnavailable": "Ekki tókst að athuga verð í augnablikinu. Reyndu aftur eftir smástund.",
+  "discountNotForCompanyPrices": "Ekki er hægt að nota afsláttarkóða með verðum fyrirtækisins."
 }

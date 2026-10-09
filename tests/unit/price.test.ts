@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPrice, saleCompareAt } from '../../app/utils/price';
+import { formatPrice, priceDisplay, saleCompareAt } from '../../app/utils/price';
 
 // Intl separates number and symbol with a no-break space; compare with plain spaces.
 const plain = (value: string) => value.replace(/\s/g, ' ');
@@ -34,5 +34,30 @@ describe('saleCompareAt', () => {
     expect(saleCompareAt(100, 120)).toBe(120);
     expect(saleCompareAt(100, 100)).toBeNull();
     expect(saleCompareAt(100, null)).toBeNull();
+  });
+});
+
+describe('priceDisplay', () => {
+  it('labels a customer price and strikes the higher list price through', () => {
+    expect(priceDisplay({ price: 80, listPrice: 100 })).toEqual({ customer: true, was: 100 });
+  });
+
+  it('labels a customer price equal to the list price without striking anything', () => {
+    expect(priceDisplay({ price: 100, listPrice: 100 })).toEqual({ customer: true, was: null });
+  });
+
+  it('ignores compareAtPrice on a priced answer', () => {
+    expect(priceDisplay({ price: 80, listPrice: 80, compareAtPrice: 120 })).toEqual({
+      customer: true,
+      was: null,
+    });
+  });
+
+  it('shows a guest (or a search result) as list prices, with a sale as before', () => {
+    expect(priceDisplay({ price: 100, compareAtPrice: 120 })).toEqual({
+      customer: false,
+      was: 120,
+    });
+    expect(priceDisplay({ price: 100 })).toEqual({ customer: false, was: null });
   });
 });

@@ -1,13 +1,32 @@
 import { EldraHttpError } from '@eldrajs/sdk';
 
+/**
+ * The gateway's reason as passed on by one of this site's priced routes (server/api/catalog,
+ * server/api/cart): the route answers `{ statusCode, data: { errorId, code } }`, which `$fetch`
+ * throws as an error whose `data` is that body.
+ */
+function routeProblem(err: unknown): { errorId?: string; code?: string } | undefined {
+  if (!err || typeof err !== 'object' || err instanceof EldraHttpError) return undefined;
+  const data = (err as { data?: { data?: unknown } }).data?.data;
+  if (!data || typeof data !== 'object') return undefined;
+  const { errorId, code } = data as { errorId?: unknown; code?: unknown };
+  return {
+    ...(typeof errorId === 'string' ? { errorId } : {}),
+    ...(typeof code === 'string' ? { code } : {}),
+  };
+}
+
 /** The gateway's specific reason, or its category when it has nothing more specific. Never the message. */
 export function errorIdOf(err: unknown): string | undefined {
-  return err instanceof EldraHttpError ? (err.errorId ?? err.code) : undefined;
+  if (err instanceof EldraHttpError) return err.errorId ?? err.code;
+  const problem = routeProblem(err);
+  return problem?.errorId ?? problem?.code;
 }
 
 /** A missing CMS entry, product or page slug. */
 export function isNotFound(err: unknown): boolean {
-  return err instanceof EldraHttpError && err.code === 'NOT_FOUND';
+  if (err instanceof EldraHttpError) return err.code === 'NOT_FOUND';
+  return routeProblem(err)?.code === 'NOT_FOUND';
 }
 
 /**

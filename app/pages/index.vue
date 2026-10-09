@@ -3,17 +3,17 @@ const { locale, t } = useLocale();
 const organization = useOrganization();
 const HOME_PRODUCT_COUNT = 8;
 
+const catalog = useCatalog();
+
 const { data } = await useAsyncData(
-  () => `home:${locale.value}`,
+  () => catalog.key(`home:${locale.value}`),
   async () => {
     const cms = useCms();
     const [hero, sections, products] = await Promise.all([
       cms.hero(),
       cms.sections(),
       // A catalog failure empties the product row; it must not take the CMS hero and sections with it.
-      useCatalog()
-        .listProducts(undefined, HOME_PRODUCT_COUNT)
-        .catch(() => []),
+      catalog.listProducts(undefined, HOME_PRODUCT_COUNT).catch(() => []),
     ]);
     return { hero, sections, products };
   },

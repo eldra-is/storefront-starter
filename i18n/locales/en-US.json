@@ -51,5 +51,17 @@
   "roleBuyer": "Buyer",
   "roleAdmin": "Administrator",
   "invited": "Invitation pending",
-  "email": "Email"
+  "email": "Email",
+  "companyPrice": "Your company's price",
+  "listPrice": "List price",
+  "chooseCompanyNotice": "Choose the company you are buying for to see its prices.",
+  "chooseCompany": "Choose company",
+  "buyingFor": "Buying for",
+  "buyForCompany": "Buy for this company",
+  "companyChanged": "Prices now show for the company you chose.",
+  "newCartOtherCompany": "Your cart belonged to another company, so a new cart was started for the company you are buying for.",
+  "newCartSignIn": "That cart was priced for a company and needs you signed in, so a new cart was started.",
+  "companyRequired": "Choose the company you are buying for on your account page first.",
+  "pricesUnavailable": "Prices could not be checked just now. Please try again shortly.",
+  "discountNotForCompanyPrices": "Discount codes cannot be combined with your company's prices."
 }

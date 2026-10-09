@@ -2,13 +2,21 @@ import { defineStore, skipHydrate } from 'pinia';
 import { computed, ref } from 'vue';
 import { createCartSession } from '@eldrajs/sdk';
 import type { EldraCart } from '@eldrajs/sdk';
+import { cartRefusal, type CartRefusal } from '~~/shared/utils/customer-prices';
 
 /** Starter-prefixed so a site never picks up a cart id another storefront left on the same origin. */
 const CART_STORAGE_KEY = 'storefront-starter.cartId';
 
+/**
+ * A guest's cart calls go from the browser to the gateway. A signed-in business customer's writes go
+ * through server/api/cart, which adds their token and company, so the cart is bound to the company
+ * and priced for it; reads by cart id stay direct (they are open, for hosted checkout too).
+ */
 export const useCartStore = defineStore('cart', () => {
   const eldra = useEldraClient();
   const { locale } = useLocale();
+  const pricing = useCustomerPricing();
+  const viaServer = () => pricing.value.signedIn;
   const session = createCartSession({
     storage: import.meta.client ? undefined : null,
     key: CART_STORAGE_KEY,
@@ -18,6 +26,8 @@ export const useCartStore = defineStore('cart', () => {
   const cartId = skipHydrate(ref<string | null>(session.read()));
   const cart = ref<EldraCart | null>(null);
   const lastError = ref<string | null>(null);
+  /** Why the cart was replaced by a new one, to tell the person; cleared on the next change. */
+  const notice = ref<CartRefusal>(null);
   const drawerOpen = ref(false);
 
   const count = computed(
@@ -58,6 +68,29 @@ export const useCartStore = defineStore('cart', () => {
     return gone;
   }
 
+  /**
+   * A refused write that means this cart can never take the person's changes: it is bound to
+   * another company (they switched), or to a company while they are no longer signed in. The cart is
+   * forgotten so the next add starts a new one, and the reason is kept to say so.
+   */
+  function replaceIfBound(err: unknown): boolean {
+    const refusal = cartRefusal(errorIdOf(err));
+    if (refusal !== 'new-cart-other-company' && refusal !== 'new-cart-sign-in') return false;
+    forgetCart();
+    notice.value = refusal;
+    return true;
+  }
+
+  /** Remembers what a refused write means for the person (stock, prices, company), for the pages. */
+  function noteRefusal(err: unknown) {
+    const refusal = cartRefusal(errorIdOf(err));
+    if (refusal === 'out-of-stock') lastError.value = 'INSUFFICIENT_STOCK';
+    else if (refusal === 'company-required') lastError.value = 'COMPANY_REQUIRED';
+    else if (refusal === 'prices-unavailable') lastError.value = 'PRICES_UNAVAILABLE';
+    else if (refusal === 'discount-not-for-customer-prices')
+      lastError.value = 'DISCOUNT_NOT_FOR_CUSTOMER_PRICES';
+  }
+
   async function addItem(
     productId: string,
     variantId: string,
@@ -65,21 +98,26 @@ export const useCartStore = defineStore('cart', () => {
     retried = false
   ): Promise<void> {
     lastError.value = null;
+    if (!retried) notice.value = null;
+    const input = {
+      productId,
+      variantId,
+      quantity,
+      ...(cartId.value ? { cartId: cartId.value } : {}),
+    };
     let result: EldraCart;
     try {
-      result = await eldra.cart.addItem({
-        productId,
-        variantId,
-        quantity,
-        ...(cartId.value ? { cartId: cartId.value } : {}),
-      });
+      result = viaServer()
+        ? await $fetch<EldraCart>('/api/cart/items', { method: 'POST', body: input })
+        : await eldra.cart.addItem(input);
     } catch (err) {
       // The server refuses an unknown cart id rather than reviving it; start a fresh cart, once.
       // A missing product or variant also answers not found, so the cart is only dropped when gone.
-      if (!retried && (await forgetIfGone(err))) {
+      // A cart bound to another company (or needing a sign-in) is replaced the same way.
+      if (!retried && (replaceIfBound(err) || (await forgetIfGone(err)))) {
         return addItem(productId, variantId, quantity, true);
       }
-      if (isOutOfStock(err)) lastError.value = 'INSUFFICIENT_STOCK';
+      noteRefusal(err);
       throw err;
     }
     if (result?.id) {
@@ -93,28 +131,49 @@ export const useCartStore = defineStore('cart', () => {
   /** Runs a mutation on the stored cart; a failure that means the cart is gone forgets it, then rethrows. */
   async function mutate(run: (id: string) => Promise<unknown>): Promise<void> {
     if (!cartId.value) return;
+    lastError.value = null;
+    notice.value = null;
     try {
       await run(cartId.value);
     } catch (err) {
-      await forgetIfGone(err);
+      if (!replaceIfBound(err)) await forgetIfGone(err);
+      noteRefusal(err);
       throw err;
     }
   }
 
+  const itemPath = (id: string, itemId: string) =>
+    `/api/cart/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`;
+
   // Mutations answer with the unlocalised cart, so state is always set by the localised read.
   async function updateQuantity(itemId: string, quantity: number): Promise<void> {
-    await mutate((id) => eldra.cart.updateItem(id, itemId, { quantity }));
+    await mutate((id) =>
+      viaServer()
+        ? $fetch(itemPath(id, itemId), { method: 'PATCH', body: { quantity } })
+        : eldra.cart.updateItem(id, itemId, { quantity })
+    );
     await loadCart();
   }
 
   async function removeItem(itemId: string): Promise<void> {
-    await mutate((id) => eldra.cart.removeItem(id, itemId));
+    await mutate((id) =>
+      viaServer()
+        ? $fetch(itemPath(id, itemId), { method: 'DELETE' })
+        : eldra.cart.removeItem(id, itemId)
+    );
     await loadCart();
   }
+
+  /** Discount codes do not combine with customer prices: a business customer's cart takes none. */
+  const discountAllowed = computed(() => !pricing.value.signedIn);
 
   async function applyDiscount(code: string): Promise<boolean> {
     if (!cartId.value || !code.trim()) return false;
     lastError.value = null;
+    if (!discountAllowed.value) {
+      lastError.value = 'DISCOUNT_NOT_FOR_CUSTOMER_PRICES';
+      return false;
+    }
     try {
       const { cart: repriced, applied } = await eldra.cart.applyDiscount(cartId.value, code, {
         locale: locale.value,
@@ -122,15 +181,23 @@ export const useCartStore = defineStore('cart', () => {
       cart.value = repriced;
       if (!applied) lastError.value = 'DISCOUNT_REJECTED';
       return applied;
-    } catch {
-      lastError.value = 'DISCOUNT_REJECTED';
+    } catch (err) {
+      lastError.value =
+        cartRefusal(errorIdOf(err)) === 'discount-not-for-customer-prices'
+          ? 'DISCOUNT_NOT_FOR_CUSTOMER_PRICES'
+          : 'DISCOUNT_REJECTED';
       return false;
     }
   }
 
   async function removeDiscount(): Promise<void> {
     await mutate(async (id) => {
-      cart.value = await eldra.cart.removeDiscount(id, { locale: locale.value });
+      cart.value = viaServer()
+        ? await $fetch<EldraCart>(`/api/cart/${encodeURIComponent(id)}/discount`, {
+            method: 'DELETE',
+            query: { locale: locale.value },
+          })
+        : await eldra.cart.removeDiscount(id, { locale: locale.value });
     });
   }
 
@@ -171,6 +238,8 @@ export const useCartStore = defineStore('cart', () => {
     cartId,
     cart,
     lastError,
+    notice,
+    discountAllowed,
     drawerOpen,
     count,
     checkoutUrl,

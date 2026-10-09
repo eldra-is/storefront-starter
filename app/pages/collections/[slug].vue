@@ -3,10 +3,11 @@ const route = useRoute();
 const { locale, t } = useLocale();
 const slug = computed(() => String(route.params.slug));
 
+const catalog = useCatalog();
+
 const { data } = await useAsyncData(
-  () => `collection:${locale.value}:${slug.value}`,
+  () => catalog.key(`collection:${locale.value}:${slug.value}`),
   async () => {
-    const catalog = useCatalog();
     const [collection, products] = await Promise.all([
       catalog.getCollection(slug.value),
       catalog.listCollectionProducts(slug.value),

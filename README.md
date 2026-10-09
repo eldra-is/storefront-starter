@@ -62,6 +62,21 @@ Deployment notes:
 - A production build served over plain `http://localhost` (for example `pnpm preview` for e2e) still names its cookies `__Host-eldra_session` and `__Secure-eldra_login`, which must be `Secure`. Chromium and Firefox accept that on localhost; Safari and WebKit refuse the cookies, so sign-in silently fails there. Run local e2e against `pnpm dev` or over https.
 - Rotating the client secret in Studio ends it at once in Keycloak: set the new `NUXT_SHOP_CLIENT_SECRET` and restart straight away. Until then sign-ins fail, and anyone signed in is signed out at their next refresh.
 
+### Customer prices
+
+A signed-in business customer sees their company's prices: what the company pays, labelled "Your company's price", with the list price struck through next to it when it is higher. A guest sees list prices exactly as before. Search results always carry list prices; a site that adds search must show them without the company label.
+
+- **Where calls go.** A guest's catalog reads and cart calls go from the browser straight to the gateway, unchanged. When signed in, product reads (`/shop`, a product, a collection's products, the home page row) go through the server routes in `server/api/catalog/`, on the server render and on client-side navigation alike, and cart writes go through `server/api/cart/`. Those routes add the session's access token and the active company (`customerHeaders(token, customerId)`: `Authorization` and `X-Customer-Id`, with the organization's UUID in `X-Org-Id`). Without a session they call as a guest, with no `Authorization` header at all. Cart reads stay direct: a cart is read by its id. Categories and collections carry no prices and stay direct.
+- **Active company.** Kept in the server session (`company:<session id>`, beside the session record, never in the browser). A person with one company buys for it without choosing. A person with several picks one on `/account` (a same-origin form post to `/api/auth/company`; the company must be one of theirs, read from `/me`); until they do, pages show list prices without the label and a notice asking them to choose, and cart writes are refused with that same request.
+- **Cart.** The first signed-in write binds the cart to the company and reprices it. A cart bound to another company (`CART_CUSTOMER_MISMATCH`, after switching company) or needing a sign-in (`CART_SIGN_IN_REQUIRED`, after signing out) is replaced by a new cart, and the cart says so. Discount codes do not combine with company prices, so a signed-in cart shows no code entry (`CART_DISCOUNT_NOT_FOR_CUSTOMER_PRICES`). `CART_PRICES_UNAVAILABLE` shows a try-again message.
+- **Failures.** B2B switched off (`FEATURE_DISABLED`) or a token the gateway refuses (401): the session is ended and the call made once more as a guest. A company that is no longer the person's is forgotten and the call made once more without it. An outage (`CUSTOMER_PRICES_UNAVAILABLE`, `SHOP_LOGIN_UNAVAILABLE`) is an error, never a quiet fall back to list prices.
+- **Caching.** No customer price may be cached anywhere:
+  - every answer of the catalog and cart server routes, guest answers and errors included, is `Cache-Control: private, no-store` with `Vary: Cookie`;
+  - a page rendered for a browser with a session cookie is `private, no-store`, because its HTML and payload carry that person's prices (`/account` always is);
+  - priced `useAsyncData` keys name the company (`useCatalog().key(…)`), so data made for one company, or for a guest, is never reused for another;
+  - never wrap these routes in `defineCachedEventHandler`, route rules with `swr`/`isr`/`cache`, a CDN rule that ignores `Cache-Control`, or `pnpm generate`: a statically generated site has no server routes and shows list prices only.
+- **Rate limits.** Signed-in catalog reads now reach the gateway from the storefront server rather than from each browser; size the gateway's per-client limits for the server's address.
+
 ## Content model
 
 `cms/content-model.eldra.json` declares every CMS schema the code reads, with demo entries in English and Icelandic: the header and its navigation items, the footer and its links, the home hero and sections, and `page` with its blocks (text, heading, image, card, button, embed, entry list).

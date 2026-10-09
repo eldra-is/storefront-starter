@@ -16,9 +16,10 @@ const selected = computed(
   () => categories.value.find((c) => c.slug === selectedSlug.value) ?? null
 );
 
+const catalog = useCatalog();
 const { data: products } = await useAsyncData(
-  () => `shop:${locale.value}:${selected.value?.id ?? 'all'}`,
-  () => useCatalog().listProducts(selected.value?.id),
+  () => catalog.key(`shop:${locale.value}:${selected.value?.id ?? 'all'}`),
+  () => catalog.listProducts(selected.value?.id),
   { default: () => [], watch: [selected] }
 );
 

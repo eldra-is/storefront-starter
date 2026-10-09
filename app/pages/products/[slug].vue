@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { GalleryImage, ProductVariant } from '~/types/catalog';
+import { cartErrorMessageKey } from '~~/shared/utils/customer-prices';
 
 const route = useRoute();
 const { locale, t } = useLocale();
@@ -7,10 +8,12 @@ const cartStore = useCartStore();
 const price = usePrice();
 const organization = useOrganization();
 const slug = computed(() => String(route.params.slug));
+const catalog = useCatalog();
 
+// Keyed per company when signed in: a payload made for one company is never reused for another.
 const { data: product, error } = await useAsyncData(
-  () => `product:${locale.value}:${slug.value}`,
-  () => useCatalog().getProduct(slug.value)
+  () => catalog.key(`product:${locale.value}:${slug.value}`),
+  () => catalog.getProduct(slug.value)
 );
 if (error.value) {
   // Branch on the SDK error, never its message: only a missing product (or no shop at all) is a
@@ -48,10 +51,12 @@ const stock = computed(() =>
 );
 const soldOut = computed(() => stock.value?.available === false);
 const lowStock = computed(() => stock.value?.available && stock.value.availableQuantity <= 3);
-const was = computed(() =>
+// A customer price (listPrice present) is labelled and shows the list price struck through; a
+// guest sees a sale's compare-at price as before.
+const display = computed(() =>
   selectedVariant.value
-    ? saleCompareAt(selectedVariant.value.price, selectedVariant.value.compareAtPrice)
-    : null
+    ? priceDisplay(selectedVariant.value)
+    : { customer: false, was: null as number | null }
 );
 
 const sortByOrder = (a: GalleryImage, b: GalleryImage) => a.sortOrder - b.sortOrder;
@@ -77,8 +82,7 @@ async function addToCart() {
     await cartStore.addItem(product.value.id, selectedVariant.value.id, 1);
     added.value = true;
   } catch {
-    addError.value =
-      cartStore.lastError === 'INSUFFICIENT_STOCK' ? t('notEnoughStock') : t('addFailed');
+    addError.value = t(cartErrorMessageKey(cartStore.lastError, 'addFailed'));
   } finally {
     adding.value = false;
   }
@@ -135,8 +139,19 @@ useSeoMeta({
       </h1>
       <p class="mt-2.5 mb-7 text-sm" data-testid="pdp-price">
         <template v-if="selectedVariant">
-          <span :class="{ 'text-accent': was }">{{ price(selectedVariant.price) }}</span>
-          <span v-if="was" class="price-was text-muted ml-2 line-through">{{ price(was) }}</span>
+          <span :class="{ 'text-accent': display.was }">{{ price(selectedVariant.price) }}</span>
+          <template v-if="display.was">
+            <span v-if="display.customer" class="sr-only">{{ t('listPrice') }}:</span>
+            <span class="price-was text-muted ml-2 line-through" data-testid="pdp-list-price">{{
+              price(display.was)
+            }}</span>
+          </template>
+          <span
+            v-if="display.customer"
+            class="text-muted mt-1 block text-[11px] tracking-[0.14em] uppercase"
+            data-testid="pdp-customer-price"
+            >{{ t('companyPrice') }}</span
+          >
         </template>
         <span v-else class="text-muted">{{ t('chooseOptions') }}</span>
       </p>

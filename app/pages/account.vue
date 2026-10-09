@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { EldraCustomerMe } from '@eldrajs/sdk';
 import { DEFAULT_RETURN_TO, accountState } from '~~/shared/utils/auth';
+import { selectableCompanies } from '~~/shared/utils/customer-prices';
 
 const { t } = useLocale();
 const route = useRoute();
@@ -24,6 +25,10 @@ const fullName = computed(() =>
   [me.value?.shopUser.firstName, me.value?.shopUser.lastName].filter(Boolean).join(' ')
 );
 const signInFailed = computed(() => route.query.signin === 'failed');
+// The company prices and the cart are for; chosen here when the person has more than one.
+const pricing = useCustomerPricing();
+const choosable = computed(() => (me.value ? selectableCompanies(me.value.memberships) : []));
+const companyChanged = computed(() => route.query.company === 'changed');
 // Full page loads: the auth routes are server routes, not pages.
 const signInHref = `/auth/login?returnTo=${encodeURIComponent(DEFAULT_RETURN_TO)}`;
 
@@ -75,7 +80,15 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
             class="border-rule grid gap-1 border-b py-4"
             :data-testid="`account-company-${membership.customerId}`"
           >
-            <span class="font-medium">{{ membership.customerName }}</span>
+            <span class="font-medium">
+              {{ membership.customerName }}
+              <span
+                v-if="pricing.customerId === membership.customerId"
+                class="text-muted ml-2 text-[11px] tracking-[0.14em] uppercase"
+                data-testid="account-active-company"
+                >{{ t('buyingFor') }}</span
+              >
+            </span>
             <span class="text-muted text-sm">
               {{ t('customerNumber') }}: {{ membership.number }} · {{ t('role') }}:
               {{ membership.role === 'ADMIN' ? t('roleAdmin') : t('roleBuyer') }}
@@ -83,6 +96,46 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
             </span>
           </li>
         </ul>
+      </section>
+
+      <section v-if="choosable.length > 1" data-testid="account-company-picker">
+        <h2 class="text-[11px] tracking-[0.14em] uppercase">{{ t('chooseCompany') }}</h2>
+        <p v-if="pricing.needsCompany" class="text-accent mt-3 text-xs" role="status">
+          {{ t('chooseCompanyNotice') }}
+        </p>
+        <p
+          v-else-if="companyChanged"
+          class="text-muted mt-3 text-xs"
+          role="status"
+          data-testid="account-company-changed"
+        >
+          {{ t('companyChanged') }}
+        </p>
+        <!-- A plain same-origin form post: the choice is kept in the server session, and the page
+             reloads so every price on it is the chosen company's. -->
+        <form method="post" action="/api/auth/company" class="mt-4 grid justify-items-start gap-4">
+          <fieldset class="m-0 grid gap-2 border-0 p-0">
+            <legend class="sr-only">{{ t('chooseCompany') }}</legend>
+            <label
+              v-for="membership in choosable"
+              :key="membership.customerId"
+              class="flex items-center gap-3"
+            >
+              <input
+                type="radio"
+                name="customerId"
+                :value="membership.customerId"
+                :checked="pricing.customerId === membership.customerId"
+                required
+                :data-testid="`account-choose-${membership.customerId}`"
+              />
+              <span>{{ membership.customerName }}</span>
+            </label>
+          </fieldset>
+          <button type="submit" :class="button" data-testid="account-choose-company">
+            {{ t('buyForCompany') }}
+          </button>
+        </form>
       </section>
 
       <div>

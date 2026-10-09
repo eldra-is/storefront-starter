@@ -15,6 +15,7 @@ import {
   sessionKey,
   sessionTtlSeconds,
   meKey,
+  companyKey,
   freshMe,
   ME_CACHE_MS,
   type CachedMe,
@@ -84,6 +85,7 @@ export async function startShopSession(event: H3Event, session: ShopSession): Pr
   if (isSessionId(previous)) {
     await store().removeItem(sessionKey(previous));
     await clearShopMe(previous);
+    await clearActiveCompany(previous);
   }
   await saveShopSession(event, randomId(), session);
 }
@@ -125,11 +127,44 @@ export async function clearShopMe(sessionId: string): Promise<void> {
   }
 }
 
+/** The company this session buys for, as chosen on /account (or defaulted to the only one). */
+export async function readActiveCompany(sessionId: string): Promise<string | null> {
+  try {
+    return await get<string>(companyKey(sessionId));
+  } catch {
+    console.warn('[auth] could not read the active company');
+    return null;
+  }
+}
+
+/** Remembers the active company for as long as the session lives. */
+export async function saveActiveCompany(
+  sessionId: string,
+  session: ShopSession,
+  customerId: string
+): Promise<void> {
+  await put(
+    companyKey(sessionId),
+    customerId,
+    sessionTtlSeconds(session.refreshExpiresAt, Date.now())
+  );
+}
+
+/** Forgets the active company. Best effort. */
+export async function clearActiveCompany(sessionId: string): Promise<void> {
+  try {
+    await store().removeItem(companyKey(sessionId));
+  } catch {
+    console.warn('[auth] could not clear the active company');
+  }
+}
+
 export async function endShopSession(event: H3Event): Promise<void> {
   const sessionId = getCookie(event, SESSION_COOKIE);
   if (isSessionId(sessionId)) {
     await store().removeItem(sessionKey(sessionId));
     await clearShopMe(sessionId);
+    await clearActiveCompany(sessionId);
   }
   deleteCookie(event, SESSION_COOKIE, cookieOptions('/', 0));
 }
@@ -198,6 +233,9 @@ async function refreshOnce(
     const next = mergeRefreshed(session, tokens);
     await storeSession(sessionId, next);
     await clearShopMe(sessionId);
+    // The session lives longer now; so does the company chosen for it.
+    const company = await readActiveCompany(sessionId);
+    if (company) await saveActiveCompany(sessionId, next, company).catch(() => undefined);
     return next;
   } catch (error) {
     if (!(error instanceof EldraOidcError) || error.error !== 'invalid_grant') {
@@ -210,7 +248,10 @@ async function refreshOnce(
     );
     if (step.kind === 'use') return step.session;
     if (step.kind === 'retry') return refreshOnce(sessionId, step.session, client, true);
-    if (step.failure.endSession) await store().removeItem(sessionKey(sessionId));
+    if (step.failure.endSession) {
+      await store().removeItem(sessionKey(sessionId));
+      await clearActiveCompany(sessionId);
+    }
     await clearShopMe(sessionId);
     throw new SessionRefreshError(step.failure);
   }

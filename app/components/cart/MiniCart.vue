@@ -1,8 +1,14 @@
 <script setup lang="ts">
+import { cartNoticeKey } from '~~/shared/utils/customer-prices';
+
 const cartStore = useCartStore();
 const { t } = useLocale();
 const price = usePrice();
 const items = computed(() => cartStore.cart?.items ?? []);
+const replacedNotice = computed(() => {
+  const key = cartNoticeKey(cartStore.notice);
+  return key ? t(key) : '';
+});
 </script>
 
 <template>
@@ -33,6 +39,9 @@ const items = computed(() => cartStore.cart?.items ?? []);
             {{ t('close') }}
           </button>
         </div>
+        <p v-if="replacedNotice" class="pt-4 text-xs" role="status" data-testid="mini-cart-notice">
+          {{ replacedNotice }}
+        </p>
         <p v-if="items.length === 0" class="text-muted pt-6">
           {{ t('emptyCart') }}
         </p>

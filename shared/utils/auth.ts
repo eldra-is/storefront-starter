@@ -68,6 +68,8 @@ export interface PendingLogin {
 
 export const sessionKey = (sessionId: string) => `session:${sessionId}`;
 export const meKey = (sessionId: string) => `me:${sessionId}`;
+/** The active company of a session, under its own key so a token refresh never overwrites a choice. */
+export const companyKey = (sessionId: string) => `company:${sessionId}`;
 export const loginKey = (loginId: string) => `login:${loginId}`;
 
 function base64Url(bytes: Uint8Array): string {

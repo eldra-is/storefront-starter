@@ -1,6 +1,7 @@
 <script setup lang="ts">
-const { locale } = useLocale();
+const { locale, t } = useLocale();
 const organization = useOrganization();
+const pricing = useCustomerPricing();
 const brand = useAppConfig().brand.name;
 const route = useRoute();
 const config = useRuntimeConfig().public;
@@ -20,6 +21,17 @@ useHead({
     <NuxtRouteAnnouncer />
     <LayoutSiteHeader />
     <main class="min-h-screen pt-[var(--header-h)]">
+      <p
+        v-if="pricing.needsCompany && route.path !== '/account'"
+        class="border-rule border-b px-[clamp(16px,4vw,48px)] py-3 text-xs"
+        role="status"
+        data-testid="choose-company-notice"
+      >
+        {{ t('chooseCompanyNotice') }}
+        <NuxtLink to="/account" class="ml-2 border-b border-current">{{
+          t('chooseCompany')
+        }}</NuxtLink>
+      </p>
       <NuxtPage />
     </main>
     <LayoutSiteFooter />

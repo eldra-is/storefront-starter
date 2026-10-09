@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { cartErrorMessageKey, cartNoticeKey } from '~~/shared/utils/customer-prices';
+
 const cartStore = useCartStore();
 const { t } = useLocale();
 const price = usePrice();
@@ -43,7 +45,7 @@ async function applyCode() {
   try {
     const ok = await cartStore.applyDiscount(code.value);
     if (ok) code.value = '';
-    else codeError.value = t('codeRejected');
+    else codeError.value = t(cartErrorMessageKey(cartStore.lastError, 'codeRejected'));
   } finally {
     applying.value = false;
   }
@@ -62,7 +64,9 @@ async function changeCart(action: () => Promise<void>): Promise<string> {
   } catch (err) {
     await cartStore.loadCart();
     if (isOutOfStock(err)) return t('notEnoughStock');
-    return cartStore.cartId ? t('cartUpdateFailed') : '';
+    // A cart replaced because it was bound to another company says so through the notice instead.
+    if (!cartStore.cartId) return '';
+    return t(cartErrorMessageKey(cartStore.lastError, 'cartUpdateFailed'));
   }
 }
 
@@ -80,6 +84,11 @@ async function removeCode() {
   codeError.value = await changeCart(() => cartStore.removeDiscount());
 }
 
+const replacedNotice = computed(() => {
+  const key = cartNoticeKey(cartStore.notice);
+  return key ? t(key) : '';
+});
+
 useSeoMeta({ title: () => t('cart') });
 </script>
 
@@ -91,6 +100,9 @@ useSeoMeta({ title: () => t('cart') });
     <p v-if="notice" class="mt-4" data-testid="cart-recovery-notice">{{ notice }}</p>
     <!-- The cart lives in the browser only; rendering it on the server would only produce a mismatch. -->
     <ClientOnly>
+      <p v-if="replacedNotice" class="mt-4" role="status" data-testid="cart-replaced-notice">
+        {{ replacedNotice }}
+      </p>
       <p v-if="recovering" class="text-muted">…</p>
       <div
         v-else-if="items.length === 0"
@@ -180,7 +192,14 @@ useSeoMeta({ title: () => t('cart') });
           </ul>
         </div>
         <aside class="sticky top-[calc(var(--header-h)+24px)] self-start">
-          <form @submit.prevent="applyCode">
+          <p
+            v-if="!cartStore.discountAllowed"
+            class="text-muted text-xs"
+            data-testid="cart-discount-not-for-customer-prices"
+          >
+            {{ t('discountNotForCompanyPrices') }}
+          </p>
+          <form v-else @submit.prevent="applyCode">
             <label class="mb-2.5 block text-[11px] tracking-[0.14em] uppercase" for="discount-code">
               {{ t('discountCode') }}
             </label>
