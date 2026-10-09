@@ -1,4 +1,4 @@
-import { shopIssuer, type EldraCustomerMe, type EldraOidcTokens } from '@eldrajs/sdk';
+import { bearer, shopIssuer, type EldraCustomerMe, type EldraOidcTokens } from '@eldrajs/sdk';
 
 /**
  * Business-customer login: the pure parts. The Nitro routes in server/routes/auth and
@@ -356,4 +356,12 @@ export function requestOrigin(options: {
     if (forwardedHost) host = forwardedHost;
   }
   return `${protocol}://${host}`;
+}
+
+/**
+ * The SDK context for a `customer.me` call. The gateway refuses an alias in X-Org-Id on a shop token
+ * (401 SHOP_TOKEN_INVALID), so this carries the organization's resolved UUID, never ELDRA_ORG_ID.
+ */
+export function meRequestContext(organizationId: string, accessToken: string) {
+  return { orgId: organizationId || undefined, headers: bearer(accessToken) };
 }

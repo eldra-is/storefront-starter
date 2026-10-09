@@ -5,7 +5,8 @@ import { createConfiguredEldraClient } from '~~/shared/utils/eldra-client';
 
 /**
  * Business login settings for this request. Enabled only when the organization has the B2B feature
- * (read once per process, like the rest of its settings) and the storefront client is configured.
+ * (the organization is re-read every 5 minutes; the header (Vue) and the /auth routes (Nitro) keep
+ * separate caches) and the storefront client is configured.
  */
 export async function useShopAuth(event: H3Event) {
   const config = useRuntimeConfig(event);
@@ -24,6 +25,10 @@ export async function useShopAuth(event: H3Event) {
   });
   return {
     eldra,
+    /** The organization's UUID, even when ELDRA_ORG_ID is an alias; the gateway refuses aliases on shop tokens. */
+    orgId: organization.id,
+    /** The key the organization is cached under, for `dropOrganizationCache`. */
+    orgKey: String(config.public.eldraOrgId),
     issuer,
     clientId: String(config.shopClientId || ''),
     clientSecret,

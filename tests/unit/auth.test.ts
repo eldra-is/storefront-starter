@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { createEldraClient } from '@eldrajs/sdk';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_RETURN_TO,
   DEFAULT_SESSION_TTL_SECONDS,
@@ -7,6 +8,7 @@ import {
   callbackCode,
   isSessionId,
   meFailure,
+  meRequestContext,
   freshMe,
   meKey,
   sessionKey,
@@ -559,5 +561,21 @@ describe('requestOrigin', () => {
     expect(
       requestOrigin({ ...direct, forwardedProto: 'gopher', forwardedHost: ' ', trustProxy: true })
     ).toBe('http://storefront:3000');
+  });
+});
+
+describe('meRequestContext', () => {
+  it('sends the resolved organization UUID as X-Org-Id even when ELDRA_ORG_ID is an alias', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ customers: [] })));
+    const eldra = createEldraClient({
+      apiBaseUrl: 'https://api.example.test',
+      orgId: 'my-shop-alias',
+      fetch: fetchMock as never,
+    });
+    await eldra.customer.me(meRequestContext('11111111-2222-3333-4444-555555555555', 'tok'));
+    const [, init] = fetchMock.mock.calls[0] as unknown as [unknown, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get('x-org-id')).toBe('11111111-2222-3333-4444-555555555555');
+    expect(headers.get('authorization')).toBe('Bearer tok');
   });
 });

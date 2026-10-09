@@ -91,6 +91,9 @@ export function pickLocale(current: string, settings: OrganizationSettings): Loc
 // switched in Studio (B2B, commerce) reaches the storefront without a restart; a failed read is retried.
 export const ORGANIZATION_CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { settings: Promise<OrganizationSettings>; readAt: number }>();
+// The last successful read per organization: served when a later read fails, so a gateway blip does
+// not turn B2B (or commerce) off for everyone.
+const lastGood = new Map<string, OrganizationSettings>();
 
 /**
  * Organization details have no dedicated SDK type with `commerce` (see `OrganizationDetailsInput`),
@@ -112,16 +115,26 @@ export function loadOrganizationSettings(
       })
       .catch(() => null),
   ])
-    .then(([details, i18n]) => toOrganizationSettings(details, i18n))
+    .then(([details, i18n]) => {
+      const settings = toOrganizationSettings(details, i18n);
+      lastGood.set(orgId, settings);
+      return settings;
+    })
     .catch(() => {
       cache.delete(orgId);
-      return FALLBACK_ORGANIZATION;
+      return lastGood.get(orgId) ?? FALLBACK_ORGANIZATION;
     });
   cache.set(orgId, { settings: pending, readAt: now });
   return pending;
 }
 
+/** Forgets one organization's cached read, so the next load asks again (the last good read is kept for failures). */
+export function dropOrganizationCache(orgId: string): void {
+  cache.delete(orgId);
+}
+
 /** Tests only. */
 export function clearOrganizationCache(): void {
   cache.clear();
+  lastGood.clear();
 }

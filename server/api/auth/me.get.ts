@@ -1,5 +1,6 @@
-import { bearer, type EldraCustomerMe } from '@eldrajs/sdk';
-import { meFailure, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
+import type { EldraCustomerMe } from '@eldrajs/sdk';
+import { dropOrganizationCache } from '~~/app/utils/organization';
+import { meFailure, meRequestContext, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
 
 /**
  * The signed-in business customer and their companies. 401: signed out (or the session just ended);
@@ -36,12 +37,15 @@ export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
 
   try {
     const me = toAccountResponse(
-      await auth.eldra.customer.me({ headers: bearer(session.accessToken) })
+      await auth.eldra.customer.me(meRequestContext(auth.orgId, session.accessToken))
     );
     await cacheShopMe(current.sessionId, me);
     return me;
   } catch (error) {
     const failure = meFailure(error);
+    // 404 is FEATURE_DISABLED: B2B was switched off, so the cached organization is stale. Drop it and
+    // the header and /auth/login catch up at once instead of after five minutes.
+    if (failure.statusCode === 404) dropOrganizationCache(auth.orgKey);
     if (failure.endSession) await endShopSession(event);
     await clearShopMe(current.sessionId);
     throw createError({ statusCode: failure.statusCode });

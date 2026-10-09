@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FALLBACK_ORGANIZATION,
   clearOrganizationCache,
+  dropOrganizationCache,
   loadOrganizationSettings,
   pickLocale,
   toOrganizationSettings,
@@ -130,5 +131,33 @@ describe('loadOrganizationSettings', () => {
     expect(await loadOrganizationSettings(eldra, 'my-shop')).toEqual(FALLBACK_ORGANIZATION);
     await loadOrganizationSettings(eldra, 'my-shop');
     expect(getOrganization.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  const b2bOn = [...commerceOn, { feature: 'B2B', enabled: true }];
+
+  it('keeps serving the last good settings when a later read fails', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    let offline = false;
+    const getOrganization = vi.fn(async () => {
+      if (offline) throw new Error('offline');
+      return { name: 'Shop', features: b2bOn };
+    });
+    const request = vi.fn(async () => ({ availableLocales: ['en-US'], defaultLocale: 'en-US' }));
+    const eldra = { request, features: { getOrganization } } as never;
+    expect((await loadOrganizationSettings(eldra, 'my-shop')).b2b).toBe(true);
+    offline = true;
+    now.mockReturnValue(1_000_000 + 300_000);
+    expect((await loadOrganizationSettings(eldra, 'my-shop')).b2b).toBe(true);
+    now.mockRestore();
+  });
+
+  it('reads again at once after dropOrganizationCache', async () => {
+    const getOrganization = vi.fn(async () => ({ name: 'Shop', features: commerceOn }));
+    const request = vi.fn(async () => ({ availableLocales: ['en-US'], defaultLocale: 'en-US' }));
+    const eldra = { request, features: { getOrganization } } as never;
+    await loadOrganizationSettings(eldra, 'my-shop');
+    dropOrganizationCache('my-shop');
+    await loadOrganizationSettings(eldra, 'my-shop');
+    expect(getOrganization).toHaveBeenCalledTimes(2);
   });
 });
