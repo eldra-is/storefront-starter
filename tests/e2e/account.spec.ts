@@ -28,7 +28,7 @@ test.describe('Business account', () => {
     await expect(page.getByTestId('account-companies').locator('li')).not.toHaveCount(0);
 
     // The session cookie is opaque and httpOnly: no token reaches the browser.
-    const cookie = (await page.context().cookies()).find((c) => c.name === 'eldra_session');
+    const cookie = (await page.context().cookies()).find((c) => c.name.endsWith('eldra_session'));
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
@@ -47,5 +47,20 @@ test.describe('Business account', () => {
     expect(response.status()).toBe(302);
     expect(response.headers()['referrer-policy']).toBe('no-referrer');
     expect(response.headers().location).toContain('/protocol/openid-connect/auth');
+  });
+});
+
+test.describe('Business sign-out', () => {
+  test.skip(!user || !password, 'Set E2E_SHOP_USER and E2E_SHOP_PASSWORD to run business login.');
+
+  test('refuses a sign-out posted from another site, and a GET ends nothing', async ({ page }) => {
+    const crossSite = await page.request.post('/auth/logout', {
+      headers: { Origin: 'https://evil.example.com', 'Sec-Fetch-Site': 'cross-site' },
+      maxRedirects: 0,
+    });
+    expect(crossSite.status()).toBe(403);
+    const get = await page.request.get('/auth/logout', { maxRedirects: 0 });
+    expect(get.status()).toBe(302);
+    expect(get.headers().location).toBe('/account');
   });
 });

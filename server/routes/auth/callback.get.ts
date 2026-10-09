@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
       redirectUri: pending.redirectUri,
       codeVerifier: pending.codeVerifier,
     });
-    await startShopSession(event, toShopSession(tokens));
+    await startShopSession(event, toShopSession(tokens, auth.issuer));
   } catch (error) {
     // The error carries the OAuth code only; never the request or the tokens.
     console.warn('[auth] code exchange failed:', (error as { error?: string }).error ?? 'unknown');

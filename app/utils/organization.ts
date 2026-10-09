@@ -87,8 +87,10 @@ export function pickLocale(current: string, settings: OrganizationSettings): Loc
     : settings.defaultLocale;
 }
 
-// Process-level: the server reads each organization once after start; a failed read is retried.
-const cache = new Map<string, Promise<OrganizationSettings>>();
+// Process-level: each organization is read again five minutes after the last read, so a feature
+// switched in Studio (B2B, commerce) reaches the storefront without a restart; a failed read is retried.
+export const ORGANIZATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const cache = new Map<string, { settings: Promise<OrganizationSettings>; readAt: number }>();
 
 /**
  * Organization details have no dedicated SDK type with `commerce` (see `OrganizationDetailsInput`),
@@ -99,8 +101,9 @@ export function loadOrganizationSettings(
   eldra: Pick<EldraClient, 'request' | 'features'>,
   orgId: string
 ): Promise<OrganizationSettings> {
+  const now = Date.now();
   const cached = cache.get(orgId);
-  if (cached) return cached;
+  if (cached && now - cached.readAt < ORGANIZATION_CACHE_TTL_MS) return cached.settings;
   const pending = Promise.all([
     eldra.features.getOrganization({ orgId }) as Promise<OrganizationDetailsInput>,
     eldra
@@ -114,7 +117,7 @@ export function loadOrganizationSettings(
       cache.delete(orgId);
       return FALLBACK_ORGANIZATION;
     });
-  cache.set(orgId, pending);
+  cache.set(orgId, { settings: pending, readAt: now });
   return pending;
 }
 

@@ -20,7 +20,7 @@ Editable content and catalog data live in Studio. Routes, layout, presentation, 
 - CMS content is optional decoration: a missing entry renders nothing, never an error page. A missing page slug is a 404.
 - Errors: branch on `errorId` or `code` through `app/utils/errors.ts`, never on message text.
 - The preview token is server-only (`runtimeConfig.previewToken`); never expose it. There is no preview route — setting `PREVIEW_TOKEN` is what makes server-side reads include drafts.
-- Currency, locales and the commerce feature come from the organization, read once per server process by `app/plugins/organization.ts` (`useOrganization()`); restart the server after changing them in Studio.
+- Currency, locales and features (commerce, B2B) come from the organization, read by `app/plugins/organization.ts` (`useOrganization()`) and cached per server process for five minutes; a change in Studio reaches the storefront within that.
 
 ## Content model
 
@@ -48,8 +48,8 @@ Two composition models: flat, repeatable section schemas for the home page, and 
 ## Business login
 
 - Off unless the organization has B2B and the storefront client is configured (`useBusinessLogin()`, set on the server by `plugins/organization.ts`; only the boolean reaches the browser).
-- Server routes `server/routes/auth/{login,callback,logout}.get.ts` and `server/api/auth/me.get.ts`; session I/O in `server/utils/shop-session.ts`; pure rules (return-path validation, expiry, error mapping) in `shared/utils/auth.ts` with unit tests.
-- Tokens stay in Nitro storage `eldra-session`; the `eldra_session` cookie is an opaque random id. Never put a token in a cookie, `localStorage`, `useState` or a page payload. Return paths go through `safeReturnTo`.
+- Server routes `server/routes/auth/login.get.ts`, `callback.get.ts`, `logout.post.ts` (sign-out is a same-origin POST; `logout.get.ts` only redirects to `/account`) and `server/api/auth/me.get.ts`; session I/O, the shared refresh and the back-channel logout in `server/utils/shop-session.ts`; pure rules (return paths, expiry, refresh conflicts, origin check, store choice, error mapping) in `shared/utils/auth.ts` with unit tests.
+- Tokens stay in Nitro storage `eldra-session`, mounted at start-up by `server/plugins/session-storage.ts` (Redis, or a bounded in-memory store); the session cookie (`__Host-eldra_session`, plain `eldra_session` in development) is an opaque random id. Never put a token in a cookie, `localStorage`, `useState` or a page payload. Return paths go through `safeReturnTo`.
 
 ## Languages
 

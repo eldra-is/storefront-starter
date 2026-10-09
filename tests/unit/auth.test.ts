@@ -16,6 +16,12 @@ import {
   sessionTtlSeconds,
   statesMatch,
   toShopSession,
+  isSameOriginRequest,
+  resolveRefreshConflict,
+  sessionCookieName,
+  loginCookieName,
+  chooseSessionStore,
+  toAccountResponse,
 } from '../../shared/utils/auth';
 
 describe('safeReturnTo', () => {
@@ -122,16 +128,20 @@ describe('statesMatch', () => {
 });
 
 describe('toShopSession', () => {
-  it('keeps the tokens and expiries, nothing else', () => {
-    const session = toShopSession({
-      accessToken: 'a',
-      refreshToken: 'r',
-      idToken: 'i',
-      expiresAt: 10,
-      refreshExpiresAt: undefined,
-      extra: 'x',
-    } as never);
+  it('keeps the tokens, expiries and the issuer that signed them, nothing else', () => {
+    const session = toShopSession(
+      {
+        accessToken: 'a',
+        refreshToken: 'r',
+        idToken: 'i',
+        expiresAt: 10,
+        refreshExpiresAt: undefined,
+        extra: 'x',
+      } as never,
+      'https://kc.example.com/realms/shop-1'
+    );
     expect(session).toEqual({
+      issuer: 'https://kc.example.com/realms/shop-1',
       accessToken: 'a',
       refreshToken: 'r',
       idToken: 'i',
@@ -192,6 +202,7 @@ describe('accountState', () => {
 
 describe('mergeRefreshed', () => {
   const previous = {
+    issuer: 'https://kc.example.com/realms/shop-1',
     accessToken: 'a1',
     refreshToken: 'r1',
     idToken: 'i1',
@@ -209,6 +220,7 @@ describe('mergeRefreshed', () => {
         refreshExpiresAt: 4,
       })
     ).toEqual({
+      issuer: 'https://kc.example.com/realms/shop-1',
       accessToken: 'a2',
       refreshToken: 'r2',
       idToken: 'i2',
@@ -227,6 +239,7 @@ describe('mergeRefreshed', () => {
         refreshExpiresAt: undefined,
       })
     ).toEqual({
+      issuer: 'https://kc.example.com/realms/shop-1',
       accessToken: 'a2',
       refreshToken: 'r1',
       idToken: 'i1',
@@ -283,5 +296,129 @@ describe('meFailure', () => {
   it('reports anything else as a bad gateway', () => {
     expect(meFailure({ status: 500 })).toEqual({ statusCode: 502, endSession: false });
     expect(meFailure(new Error('network'))).toEqual({ statusCode: 502, endSession: false });
+  });
+});
+
+describe('resolveRefreshConflict', () => {
+  const now = 1_000_000;
+  const stored = (refreshToken: string, expiresAt: number) => ({
+    issuer: 'i',
+    accessToken: `a-${refreshToken}`,
+    refreshToken,
+    idToken: 'id',
+    expiresAt,
+    refreshExpiresAt: undefined,
+  });
+
+  it('ends the session when the store is empty or still holds the token that failed', () => {
+    expect(resolveRefreshConflict('r1', null, now)).toEqual({ action: 'end' });
+    expect(resolveRefreshConflict('r1', stored('r1', now + 300_000), now)).toEqual({
+      action: 'end',
+    });
+  });
+
+  it('continues with what another request just stored', () => {
+    const fresh = stored('r2', now + 300_000);
+    expect(resolveRefreshConflict('r1', fresh, now)).toEqual({ action: 'use', session: fresh });
+  });
+
+  it('retries once with a newer token that itself needs refreshing', () => {
+    const later = stored('r2', now + 10_000);
+    expect(resolveRefreshConflict('r1', later, now)).toEqual({ action: 'retry', session: later });
+  });
+});
+
+describe('isSameOriginRequest', () => {
+  const requestOrigin = 'https://shop.example.com';
+
+  it('accepts a same-origin fetch or a matching Origin header', () => {
+    expect(isSameOriginRequest({ secFetchSite: 'same-origin', requestOrigin })).toBe(true);
+    expect(isSameOriginRequest({ origin: 'https://shop.example.com', requestOrigin })).toBe(true);
+  });
+
+  it('refuses other sites, a typed URL and requests that say nothing', () => {
+    expect(isSameOriginRequest({ secFetchSite: 'cross-site', requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ secFetchSite: 'same-site', requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ secFetchSite: 'none', requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ origin: 'https://evil.example.com', requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ origin: 'null', requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ requestOrigin })).toBe(false);
+    expect(isSameOriginRequest({ origin: '', requestOrigin: '' })).toBe(false);
+  });
+
+  it('refuses a cross-site fetch even with a forged-looking Origin', () => {
+    expect(
+      isSameOriginRequest({
+        secFetchSite: 'cross-site',
+        origin: 'https://shop.example.com',
+        requestOrigin,
+      })
+    ).toBe(false);
+  });
+});
+
+describe('cookie names', () => {
+  it('uses host-locked names outside development', () => {
+    expect(sessionCookieName(false)).toBe('__Host-eldra_session');
+    expect(loginCookieName(false)).toBe('__Secure-eldra_login');
+  });
+
+  it('uses plain names in development, where cookies are not Secure', () => {
+    expect(sessionCookieName(true)).toBe('eldra_session');
+    expect(loginCookieName(true)).toBe('eldra_login');
+  });
+});
+
+describe('chooseSessionStore', () => {
+  const base = { url: '', production: true, businessLoginConfigured: true };
+
+  it('uses Redis when asked and refuses Redis without a URL', () => {
+    expect(chooseSessionStore({ ...base, driver: 'redis', url: 'redis://cache:6379' })).toEqual({
+      kind: 'redis',
+    });
+    expect(chooseSessionStore({ ...base, driver: ' REDIS ', url: 'redis://cache' })).toEqual({
+      kind: 'redis',
+    });
+    expect(chooseSessionStore({ ...base, driver: 'redis' }).kind).toBe('error');
+  });
+
+  it('refuses unasked-for memory in production when business login is configured', () => {
+    expect(chooseSessionStore({ ...base, driver: '' }).kind).toBe('error');
+    expect(chooseSessionStore({ ...base, driver: 'memory' })).toEqual({ kind: 'memory' });
+  });
+
+  it('uses memory in development and when business login is not configured', () => {
+    expect(chooseSessionStore({ ...base, driver: '', production: false })).toEqual({
+      kind: 'memory',
+    });
+    expect(chooseSessionStore({ ...base, driver: '', businessLoginConfigured: false })).toEqual({
+      kind: 'memory',
+    });
+  });
+
+  it('refuses a driver it does not know', () => {
+    expect(chooseSessionStore({ ...base, driver: 'mongo' }).kind).toBe('error');
+  });
+});
+
+describe('toAccountResponse', () => {
+  it('passes on the person and their memberships, nothing else', () => {
+    const me = {
+      shopUser: { id: 'u', email: 'e@x.is', firstName: 'A', lastName: 'B' },
+      memberships: [
+        {
+          customerId: 'c',
+          customerName: 'Acme',
+          number: '1',
+          role: 'ADMIN' as const,
+          status: 'ACTIVE' as const,
+        },
+      ],
+      accessToken: 'leak',
+    };
+    expect(toAccountResponse(me)).toEqual({
+      shopUser: me.shopUser,
+      memberships: me.memberships,
+    });
   });
 });

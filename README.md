@@ -40,16 +40,22 @@ Set `PREVIEW_TOKEN` only on a separate, private preview deployment, never on the
 
 Organizations with the **B2B** feature can let business customers sign in on the storefront through the organization's shop realm in Keycloak. It is off unless all of these hold: the organization has B2B enabled, `NUXT_SHOP_CLIENT_SECRET` is set, and an issuer is known (`NUXT_PUBLIC_SHOP_ISSUER`, or `NUXT_PUBLIC_KEYCLOAK_BASE_URL` from which `<base>/realms/shop-<organization UUID>` is derived). Then the header shows an account link and `/account` lists the person's companies with customer number and role.
 
-| Variable                        | Meaning                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------ |
-| `NUXT_PUBLIC_KEYCLOAK_BASE_URL` | Keycloak's public origin; the shop realm issuer is derived from it                         |
-| `NUXT_PUBLIC_SHOP_ISSUER`       | the issuer in full; wins over the derived one                                              |
-| `NUXT_SHOP_CLIENT_ID`           | the realm's storefront client; default `storefront`                                        |
-| `NUXT_SHOP_CLIENT_SECRET`       | server-only; Studio > Settings > Business sales shows it once on rotate. Never commit it   |
-| `NUXT_SESSION_STORAGE_DRIVER`   | `memory` (default: one server, sessions end on restart) or `redis`                         |
-| `NUXT_SESSION_STORAGE_URL`      | Redis URL for `redis`, read at runtime (it may carry a password; it is never in the build) |
+| Variable                        | Meaning                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUXT_PUBLIC_KEYCLOAK_BASE_URL` | Keycloak's public origin; the shop realm issuer is derived from it                                                                                            |
+| `NUXT_PUBLIC_SHOP_ISSUER`       | the issuer in full; wins over the derived one                                                                                                                 |
+| `NUXT_SHOP_CLIENT_ID`           | the realm's storefront client; default `storefront`                                                                                                           |
+| `NUXT_SHOP_CLIENT_SECRET`       | server-only; Studio > Settings > Business sales shows it once on rotate. Never commit it                                                                      |
+| `NUXT_SESSION_STORAGE_DRIVER`   | `redis`, or `memory` (one server, sign-ins lost on restart). Required in production once business login is configured: the server refuses to start without it |
+| `NUXT_SESSION_STORAGE_URL`      | Redis URL for `redis`, read at runtime (it may carry a password; it is never in the build)                                                                    |
 
-The flow is the authorization code flow with PKCE, run by the server routes `/auth/login`, `/auth/callback` and `/auth/logout` and the JSON route `/api/auth/me`. Tokens never reach the browser: they are kept in the server's `eldra-session` storage, and the `eldra_session` cookie holds only a random id (httpOnly, `Secure` outside development, `SameSite=Lax`), with a fresh id on every sign-in. The access token is refreshed on the server when less than a minute is left. Studio registers `<storefront origin>/auth/callback` as a redirect URI for the storefront URL and every storefront origin, so sign in on one of those origins. Run more than one server instance, or want sign-ins to survive a restart: use `redis`.
+The flow is the authorization code flow with PKCE, run by the server routes `/auth/login` and `/auth/callback`, sign-out by a same-origin `POST /auth/logout` from the account page, and the JSON route `/api/auth/me`. Tokens never reach the browser: they are kept in the server's `eldra-session` storage, and the session cookie (`__Host-eldra_session`; `eldra_session` in development) holds only a random id (httpOnly, `Secure` outside development, `SameSite=Lax`), with a fresh id on every sign-in. The access token is refreshed on the server when less than a minute is left, once per session at a time. Sign-out ends the stored session, ends the Keycloak session from the server, then sends the browser through Keycloak's logout. Studio registers `<storefront origin>/auth/callback` as a redirect URI for the storefront URL and every storefront origin, so sign in on one of those origins.
+
+Deployment notes:
+
+- Run more than one server instance, or want sign-ins to survive a restart: use `redis`. The in-memory store keeps at most 10,000 sessions and logins in flight per server.
+- Keep **Revoke refresh token** off in the shop realm (it is off in the realm Eldra provisions). With it on, two requests refreshing one session on different servers spend the same refresh token and the loser is signed out.
+- Rotating the client secret in Studio ends it at once in Keycloak: set the new `NUXT_SHOP_CLIENT_SECRET` and restart straight away. Until then sign-ins fail, and anyone signed in is signed out at their next refresh.
 
 ## Content model
 

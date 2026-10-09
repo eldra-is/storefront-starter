@@ -86,7 +86,11 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
       </section>
 
       <div>
-        <a href="/auth/logout" :class="button" data-testid="account-sign-out">{{ t('signOut') }}</a>
+        <form method="post" action="/auth/logout">
+          <button type="submit" :class="button" data-testid="account-sign-out">
+            {{ t('signOut') }}
+          </button>
+        </form>
       </div>
     </div>
 
@@ -96,7 +100,11 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
       data-testid="account-no-membership"
     >
       <p class="text-muted">{{ t('noMembership') }}</p>
-      <a href="/auth/logout" :class="button" data-testid="account-sign-out">{{ t('signOut') }}</a>
+      <form method="post" action="/auth/logout">
+        <button type="submit" :class="button" data-testid="account-sign-out">
+          {{ t('signOut') }}
+        </button>
+      </form>
     </div>
 
     <p

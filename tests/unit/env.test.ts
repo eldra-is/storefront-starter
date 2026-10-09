@@ -44,10 +44,9 @@ describe('resolveStorefrontEnv', () => {
       siteIndexable: true,
       defaultLocationId: 'loc-1',
       shopClientId: 'shop-client',
-      shopClientSecret: 'client-secret',
       shopIssuer: 'https://auth.example.com/realms/shop-1',
       keycloakBaseUrl: 'https://auth.example.com',
-      sessionStorage: { driver: 'redis', url: 'redis://cache:6379' },
+      sessionStorageDriver: 'redis',
     });
   });
 
@@ -60,15 +59,17 @@ describe('resolveStorefrontEnv', () => {
     expect(env.siteIndexable).toBe(false);
     expect(env.defaultLocationId).toBe('');
     expect(env.shopClientId).toBe('storefront');
-    expect(env.shopClientSecret).toBe('');
     expect(env.shopIssuer).toBe('');
     expect(env.keycloakBaseUrl).toBe('');
-    expect(env.sessionStorage).toEqual({ driver: 'memory', url: '' });
+    expect(env.sessionStorageDriver).toBe('');
   });
 
-  it('keeps sessions in memory for an unknown storage driver', () => {
-    expect(
-      resolveStorefrontEnv({ NUXT_SESSION_STORAGE_DRIVER: 'mongo' }).sessionStorage.driver
-    ).toBe('memory');
+  it('never carries the client secret or the Redis URL into the build', () => {
+    const env = resolveStorefrontEnv({
+      NUXT_SHOP_CLIENT_SECRET: 'client-secret',
+      NUXT_SESSION_STORAGE_URL: 'redis://:password@cache:6379',
+    });
+    expect(JSON.stringify(env)).not.toContain('client-secret');
+    expect(JSON.stringify(env)).not.toContain('password');
   });
 });

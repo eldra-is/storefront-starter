@@ -1,5 +1,5 @@
-import { bearer, refreshTokens, type EldraCustomerMe } from '@eldrajs/sdk';
-import { meFailure, mergeRefreshed, needsRefresh, refreshFailure } from '~~/shared/utils/auth';
+import { bearer, type EldraCustomerMe } from '@eldrajs/sdk';
+import { meFailure, needsRefresh, toAccountResponse } from '~~/shared/utils/auth';
 
 /**
  * The signed-in business customer and their companies. 401: signed out (or the session just ended);
@@ -16,23 +16,22 @@ export default defineEventHandler(async (event): Promise<EldraCustomerMe> => {
 
   if (needsRefresh(session, Date.now())) {
     try {
-      const tokens = await refreshTokens({
-        issuer: auth.issuer,
-        clientId: auth.clientId,
-        clientSecret: auth.clientSecret,
-        refreshToken: session.refreshToken,
-      });
-      session = mergeRefreshed(session, tokens);
-      await saveShopSession(event, current.sessionId, session);
+      session = await refreshShopSession(current.sessionId, session, auth);
+      touchSessionCookie(event, current.sessionId, session);
     } catch (error) {
-      const failure = refreshFailure(error);
+      const failure =
+        error instanceof SessionRefreshError
+          ? error.failure
+          : { statusCode: 502 as const, endSession: false };
       if (failure.endSession) await endShopSession(event);
       throw createError({ statusCode: failure.statusCode });
     }
   }
 
   try {
-    return await auth.eldra.customer.me({ headers: bearer(session.accessToken) });
+    return toAccountResponse(
+      await auth.eldra.customer.me({ headers: bearer(session.accessToken) })
+    );
   } catch (error) {
     const failure = meFailure(error);
     if (failure.endSession) await endShopSession(event);

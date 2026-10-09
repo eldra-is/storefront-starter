@@ -104,6 +104,21 @@ describe('loadOrganizationSettings', () => {
     expect(request).toHaveBeenCalledWith({ path: '/organization/v1/my-shop/i18n' });
   });
 
+  it('reads the organization again after five minutes', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const getOrganization = vi.fn(async () => ({ name: 'Shop', features: commerceOn }));
+    const request = vi.fn(async () => ({ availableLocales: ['en-US'], defaultLocale: 'en-US' }));
+    const eldra = { request, features: { getOrganization } } as never;
+    await loadOrganizationSettings(eldra, 'my-shop');
+    now.mockReturnValue(1_000_000 + 299_999);
+    await loadOrganizationSettings(eldra, 'my-shop');
+    expect(getOrganization).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(1_000_000 + 300_000);
+    await loadOrganizationSettings(eldra, 'my-shop');
+    expect(getOrganization).toHaveBeenCalledTimes(2);
+    now.mockRestore();
+  });
+
   it('falls back and retries later when the organization cannot be read', async () => {
     const getOrganization = vi.fn(async () => {
       throw new Error('offline');

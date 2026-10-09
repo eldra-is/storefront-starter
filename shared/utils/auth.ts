@@ -1,4 +1,4 @@
-import { shopIssuer, type EldraOidcTokens } from '@eldrajs/sdk';
+import { shopIssuer, type EldraCustomerMe, type EldraOidcTokens } from '@eldrajs/sdk';
 
 /**
  * Business-customer login: the pure parts. The Nitro routes in server/routes/auth and
@@ -6,10 +6,19 @@ import { shopIssuer, type EldraOidcTokens } from '@eldrajs/sdk';
  * server's `eldra-session` storage.
  */
 
-/** Holds the opaque session id of a signed-in business customer. */
+/** Holds the opaque session id of a signed-in business customer (see `sessionCookieName`). */
 export const SESSION_COOKIE = 'eldra_session';
 /** Holds the id of a login in flight (state, PKCE verifier, return path), between login and callback. */
 export const LOGIN_COOKIE = 'eldra_login';
+
+/**
+ * Outside development the session cookie is `__Host-` (Secure, Path=/, no Domain: no subdomain can
+ * set or shadow it). The login cookie lives on /auth only, so it can be `__Secure-` but not `__Host-`.
+ * Development serves plain http, where browsers refuse both prefixes.
+ */
+export const sessionCookieName = (dev: boolean) =>
+  dev ? SESSION_COOKIE : `__Host-${SESSION_COOKIE}`;
+export const loginCookieName = (dev: boolean) => (dev ? LOGIN_COOKIE : `__Secure-${LOGIN_COOKIE}`);
 /** The Nitro storage mount for sessions and logins in flight (nuxt.config.ts, server/plugins). */
 export const SESSION_STORAGE = 'eldra-session';
 /** A login must come back from Keycloak within ten minutes. */
@@ -25,7 +34,10 @@ const MAX_RETURN_TO_LENGTH = 2048;
 export type ShopSession = Pick<
   EldraOidcTokens,
   'accessToken' | 'refreshToken' | 'idToken' | 'expiresAt' | 'refreshExpiresAt'
->;
+> & {
+  /** The issuer that signed these tokens: refresh and logout go back to it, whatever config says now. */
+  issuer: string;
+};
 
 /** Stored under a login id until the callback takes it (single use). */
 export interface PendingLogin {
@@ -90,8 +102,9 @@ export function statesMatch(expected: string, actual: unknown): boolean {
   return diff === 0;
 }
 
-export function toShopSession(tokens: EldraOidcTokens): ShopSession {
+export function toShopSession(tokens: EldraOidcTokens, issuer: string): ShopSession {
   return {
+    issuer,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     idToken: tokens.idToken,
@@ -139,6 +152,7 @@ export function accountState(status: number | undefined): AccountState {
 /** The session after a refresh; Keycloak may leave out a refresh or id token it did not rotate. */
 export function mergeRefreshed(previous: ShopSession, tokens: EldraOidcTokens): ShopSession {
   return {
+    issuer: previous.issuer,
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken || previous.refreshToken,
     idToken: tokens.idToken || previous.idToken,
@@ -180,4 +194,87 @@ export function meFailure(error: unknown): AuthFailure {
   if (status === 401) return { statusCode: 401, endSession: true };
   if (status === 403) return { statusCode: 403, endSession: false };
   return { statusCode: 502, endSession: false };
+}
+
+export type RefreshConflict =
+  | { action: 'end' }
+  | { action: 'use'; session: ShopSession }
+  | { action: 'retry'; session: ShopSession };
+
+/**
+ * A refresh answered `invalid_grant`. Another request (another server, or a tab) may have refreshed
+ * first and rotated the token, so the store is read again before anything ends: the session ends
+ * only when the store is empty or still holds the token that failed.
+ */
+export function resolveRefreshConflict(
+  failedRefreshToken: string,
+  stored: ShopSession | null,
+  now: number
+): RefreshConflict {
+  if (!stored || stored.refreshToken === failedRefreshToken) return { action: 'end' };
+  if (!needsRefresh(stored, now)) return { action: 'use', session: stored };
+  return { action: 'retry', session: stored };
+}
+
+/**
+ * A state-changing request (sign-out) made by this site's own pages: the browser says
+ * `Sec-Fetch-Site: same-origin`, or, where it sends no fetch metadata, an `Origin` equal to the
+ * request's. A browser that reports another site is refused whatever its Origin says.
+ */
+export function isSameOriginRequest(options: {
+  secFetchSite?: string | null;
+  origin?: string | null;
+  requestOrigin: string;
+}): boolean {
+  const site = options.secFetchSite?.trim().toLowerCase();
+  if (site) return site === 'same-origin';
+  return Boolean(options.requestOrigin) && options.origin === options.requestOrigin;
+}
+
+export type SessionStoreChoice =
+  | { kind: 'memory' }
+  | { kind: 'redis' }
+  | { kind: 'error'; message: string };
+
+/**
+ * Where sessions live. Memory is only for one server: in production with business login configured
+ * it must be asked for (NUXT_SESSION_STORAGE_DRIVER=memory), so a missing setting cannot quietly
+ * sign people out on every restart or every second request behind a load balancer.
+ */
+export function chooseSessionStore(options: {
+  driver: string;
+  url: string;
+  production: boolean;
+  businessLoginConfigured: boolean;
+}): SessionStoreChoice {
+  const driver = options.driver.trim().toLowerCase();
+  if (driver === 'redis') {
+    return options.url.trim()
+      ? { kind: 'redis' }
+      : {
+          kind: 'error',
+          message: 'NUXT_SESSION_STORAGE_URL is required when the driver is redis.',
+        };
+  }
+  if (driver === 'memory') return { kind: 'memory' };
+  if (driver) {
+    return {
+      kind: 'error',
+      message: `Unknown NUXT_SESSION_STORAGE_DRIVER "${driver}": use redis or memory.`,
+    };
+  }
+  if (options.production && options.businessLoginConfigured) {
+    return {
+      kind: 'error',
+      message:
+        'Business login is configured but NUXT_SESSION_STORAGE_DRIVER is not set. Set it to redis ' +
+        '(with NUXT_SESSION_STORAGE_URL), or to memory for a single server that may lose sign-ins on restart.',
+    };
+  }
+  return { kind: 'memory' };
+}
+
+/** What `/api/auth/me` answers: the person and their companies, and nothing the SDK may add later. */
+export function toAccountResponse(me: EldraCustomerMe): EldraCustomerMe {
+  return { shopUser: me.shopUser, memberships: me.memberships };
 }
