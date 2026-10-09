@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
       code,
       redirectUri: pending.redirectUri,
       codeVerifier: pending.codeVerifier,
+      fetch: timedFetch,
     });
     await startShopSession(event, toShopSession(tokens, auth.issuer));
   } catch (error) {

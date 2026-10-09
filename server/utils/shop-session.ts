@@ -172,6 +172,11 @@ interface RefreshClient {
   clientSecret: string;
 }
 
+// A hung Keycloak must not hold the shared refresh promise (and every request waiting on it) forever.
+export const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
+export const timedFetch: typeof fetch = (input, init) =>
+  fetch(input, { ...init, signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS) });
+
 // One refresh per session at a time in this process: concurrent requests share its result instead
 // of spending the same refresh token twice.
 const refreshing = new Map<string, Promise<ShopSession>>();
@@ -188,6 +193,7 @@ async function refreshOnce(
       clientId: client.clientId,
       clientSecret: client.clientSecret,
       refreshToken: session.refreshToken,
+      fetch: timedFetch,
     });
     const next = mergeRefreshed(session, tokens);
     await storeSession(sessionId, next);
