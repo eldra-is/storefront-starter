@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { cartNoticeMessage } from '~~/shared/utils/customer-prices';
+import {
+  CART_ALERTS,
+  cartErrorMessageKey,
+  cartNoticeMessage,
+} from '~~/shared/utils/customer-prices';
 
 const cartStore = useCartStore();
 const { t } = useLocale();
 const price = usePrice();
 const items = computed(() => cartStore.cart?.items ?? []);
+const cartAlert = computed(() =>
+  cartStore.lastError && CART_ALERTS.includes(cartStore.lastError)
+    ? t(cartErrorMessageKey(cartStore.lastError, 'cartWait'))
+    : ''
+);
 const replacedNotice = computed(() => {
   const message = cartNoticeMessage(cartStore.notice);
   return message ? t(message.key, message.params) : '';
@@ -39,6 +48,14 @@ const replacedNotice = computed(() => {
             {{ t('close') }}
           </button>
         </div>
+        <p
+          v-if="cartAlert"
+          class="text-accent pt-4 text-xs"
+          role="alert"
+          data-testid="mini-cart-alert"
+        >
+          {{ cartAlert }}
+        </p>
         <p v-if="replacedNotice" class="pt-4 text-xs" role="status" data-testid="mini-cart-notice">
           {{ replacedNotice }}
         </p>

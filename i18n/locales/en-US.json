@@ -68,5 +68,6 @@
   "cartMovedToYourCompanyMissing": "Your cart was moved to your company and repriced. {missing} item(s) could not be carried over.",
   "cartMovedToGuest": "You are no longer signed in, so your cart was moved to a guest cart at list prices.",
   "cartMovedToGuestMissing": "You are no longer signed in, so your cart was moved to a guest cart at list prices. {missing} item(s) could not be carried over.",
-  "cartMoveFailed": "Your cart could not be repriced for your company just now. Your items are kept; please try again shortly."
+  "cartMoveFailed": "Your cart could not be repriced for your company just now. Your items are kept; please try again shortly.",
+  "cartWait": "Your company's prices cannot be confirmed right now, so your cart is not shown. Your items are kept; please try again shortly."
 }

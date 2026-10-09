@@ -9,6 +9,7 @@ import {
   activeCompany,
   addItemInput,
   cartErrorMessageKey,
+  boundCompanyOf,
   cartBindingAction,
   cartNoticeMessage,
   prepareCustomerPricing,
@@ -271,6 +272,44 @@ describe('caching', () => {
   });
 });
 
+describe('the priced-for header', () => {
+  const header = (run: { headers: Record<string, string>[] }) =>
+    run.headers.map((h) => h['X-Eldra-Priced-For']).filter(Boolean);
+
+  it('names the company a signed-in call ran for', async () => {
+    const run = harness(async () => 'priced');
+    await runPriced(run);
+    expect(header(run)).toEqual(['c1']);
+  });
+
+  it('says customer when the gateway chose the only company', async () => {
+    const run = harness(async () => 'priced', { caller: { ...caller, customerId: null } });
+    await runPriced(run);
+    expect(header(run)).toEqual(['customer']);
+  });
+
+  it('says guest for a guest, and after falling back to a guest', async () => {
+    const guest = harness(async () => 'list', { caller: null });
+    await runPriced(guest);
+    expect(header(guest)).toEqual(['guest']);
+
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValueOnce(problem(403, 'FEATURE_DISABLED'))
+      .mockResolvedValueOnce('list');
+    const fellBack = harness(call, { kind: 'write' });
+    await runPriced(fellBack);
+    expect(header(fellBack)).toEqual(['guest']);
+  });
+
+  it('is read back into the company a cart is bound to', () => {
+    expect(boundCompanyOf('c1', 'c2')).toBe('c1');
+    expect(boundCompanyOf('customer', 'c2')).toBe('c2');
+    expect(boundCompanyOf('guest', 'c2')).toBeNull();
+    expect(boundCompanyOf(null, 'c2')).toBeNull();
+  });
+});
+
 describe('routeErrorOf', () => {
   it('passes the gateway status and reason, never the message', () => {
     expect(routeErrorOf(problem(409, 'CART_SIGN_IN_REQUIRED', 'CONFLICT'))).toEqual({
@@ -425,12 +464,18 @@ describe('cartBindingAction', () => {
     expect(cartBindingAction(null, signedIn('b'), false)).toBe('keep');
   });
 
-  it('forgets a company cart on a signed-out browser', () => {
-    expect(cartBindingAction('a', SIGNED_OUT_PRICING, true)).toBe('forget');
+  it('moves a company cart to a guest cart for someone who is now a guest', () => {
+    expect(cartBindingAction('a', SIGNED_OUT_PRICING, true)).toBe('to-guest');
+    expect(cartBindingAction('a', { ...signedIn(null), noCompany: true }, true)).toBe('to-guest');
+    expect(cartBindingAction(null, { ...signedIn(null), noCompany: true }, true)).toBe('keep');
   });
 
-  it('waits while no company is chosen', () => {
+  it('waits while the company cannot be known', () => {
     expect(cartBindingAction('a', signedIn(null, true), true)).toBe('wait');
+    expect(cartBindingAction(null, signedIn(null, true), true)).toBe('wait');
+    // Signed in with a company cart but the account could not be read: never `keep`.
+    expect(cartBindingAction('a', signedIn(null), true)).toBe('wait');
+    expect(cartBindingAction(null, signedIn(null), true)).toBe('keep');
   });
 });
 

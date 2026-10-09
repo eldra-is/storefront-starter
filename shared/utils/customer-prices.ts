@@ -87,31 +87,61 @@ export interface PricedRun<T> {
  */
 export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
   run.setHeaders({ ...PRICED_RESPONSE_HEADERS });
-  const context = pricedContext(run.caller);
-  if (!context || !run.caller) return run.call(undefined);
+  // Says how the answer was priced (PRICED_FOR_HEADER), so a browser binds its cart to a company
+  // only when the server really wrote as that company.
+  const as = async (caller: PricedCaller | null): Promise<T> => {
+    const result = await run.call(pricedContext(caller));
+    run.setHeaders({ [PRICED_FOR_HEADER]: pricedFor(caller) });
+    return result;
+  };
+  if (!pricedContext(run.caller) || !run.caller) return as(null);
   try {
-    return await run.call(context);
+    return await as(run.caller);
   } catch (error) {
     const failure = pricedFailure(error, run.kind);
     if (failure === 'end-session') {
       const { errorId } = (error ?? {}) as { errorId?: unknown };
       await run.endSession({ featureDisabled: errorId === 'FEATURE_DISABLED' });
-      return run.call(undefined);
+      return as(null);
     }
-    if (failure === 'guest') return run.call(undefined);
+    if (failure === 'guest') return as(null);
     if (failure === 'drop-company' && run.caller.customerId) {
       await run.dropCompany();
       try {
-        return await run.call(pricedContext({ ...run.caller, customerId: null }));
+        return await as({ ...run.caller, customerId: null });
       } catch (retryError) {
         // Without the stale company a read may meet "choose a company" (several left): list prices,
         // shown without the company label, until the person chooses. A write still needs the choice.
-        if (pricedFailure(retryError, run.kind) === 'guest') return run.call(undefined);
+        if (pricedFailure(retryError, run.kind) === 'guest') return as(null);
         throw retryError;
       }
     }
     throw error;
   }
+}
+
+/**
+ * The header a priced route answers with: `guest` when the call ran as a guest (no session, or the
+ * session ended or had no company), else the company it ran for (`customer` when the gateway chose
+ * the person's only company itself).
+ */
+export const PRICED_FOR_HEADER = 'X-Eldra-Priced-For';
+
+export function pricedFor(caller: PricedCaller | null): string {
+  if (!caller?.accessToken) return 'guest';
+  return caller.customerId || 'customer';
+}
+
+/**
+ * The company a cart write was priced for, from PRICED_FOR_HEADER: null for a guest write (or no
+ * header: a direct call), the named company, or the active company for `customer`.
+ */
+export function boundCompanyOf(
+  header: string | null | undefined,
+  activeCustomerId: string | null
+): string | null {
+  if (!header || header === 'guest') return null;
+  return header === 'customer' ? activeCustomerId : header;
 }
 
 /** The status and the gateway's reason of a failed call, for a route to answer with (never the message). */
@@ -181,6 +211,8 @@ export interface CustomerPricingState {
   needsCompany: boolean;
   /** The active company's name, for messages; null when it could not be read. */
   customerName: string | null;
+  /** Signed in, but the person is no longer a member of any company here: they buy as a guest. */
+  noCompany: boolean;
 }
 
 export const SIGNED_OUT_PRICING: CustomerPricingState = {
@@ -188,6 +220,7 @@ export const SIGNED_OUT_PRICING: CustomerPricingState = {
   customerId: null,
   needsCompany: false,
   customerName: null,
+  noCompany: false,
 };
 
 /**
@@ -285,6 +318,12 @@ export function cartErrorMessageKey(
       return 'pricesUnavailable';
     case 'DISCOUNT_NOT_FOR_CUSTOMER_PRICES':
       return 'discountNotForCompanyPrices';
+    case 'CART_MOVE_FAILED':
+      return 'cartMoveFailed';
+    case 'CART_WAIT':
+      return 'cartWait';
+    case 'CART_CHOOSE_COMPANY':
+      return 'companyRequired';
     default:
       return fallback;
   }
@@ -324,19 +363,26 @@ export function cartNoticeMessage(
  * (`boundTo`, kept beside the cart id; the web cart does not say) and who is buying now:
  * - `keep`: it is this buyer's cart.
  * - `move`: signed in for a company the cart is not priced for (another company's, or a guest
- *   cart): replay its lines into a new cart for this company.
- * - `forget`: a company cart on a browser no longer signed in (sign-out, a shared device): drop it.
- * - `wait`: signed in but no company chosen yet: nothing can be priced; keep it and hide checkout.
+ *   cart with lines): replay its lines into a new cart for this company.
+ * - `to-guest`: a company cart for someone who is now a guest (signed out, the session ended, or
+ *   no company left): replay its lines into a guest cart at list prices. (Signing out on purpose
+ *   drops the company cart instead, so a shared device keeps nothing.)
+ * - `wait`: signed in but the company cannot be known (none chosen yet, or the account could not be
+ *   read): the cart is not shown and cannot be checked out until it can.
  */
-export type CartBindingAction = 'keep' | 'move' | 'forget' | 'wait';
+export type CartBindingAction = 'keep' | 'move' | 'to-guest' | 'wait';
 
 export function cartBindingAction(
   boundTo: string | null,
   pricing: CustomerPricingState,
   hasLines: boolean
 ): CartBindingAction {
-  if (!pricing.signedIn) return boundTo ? 'forget' : 'keep';
-  if (!pricing.customerId) return pricing.needsCompany ? 'wait' : 'keep';
+  if (!pricing.signedIn) return boundTo ? 'to-guest' : 'keep';
+  if (pricing.needsCompany) return 'wait';
+  if (!pricing.customerId) {
+    if (!boundTo) return 'keep';
+    return pricing.noCompany ? 'to-guest' : 'wait';
+  }
   if (boundTo === pricing.customerId) return 'keep';
   if (!boundTo && !hasLines) return 'keep';
   return 'move';
@@ -361,3 +407,6 @@ export async function prepareCustomerPricing(deps: {
     return { ...SIGNED_OUT_PRICING };
   }
 }
+
+/** A cart-level problem the cart page and the mini cart show above the lines. */
+export const CART_ALERTS = ['CART_MOVE_FAILED', 'CART_WAIT', 'CART_CHOOSE_COMPANY'];

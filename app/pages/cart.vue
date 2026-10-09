@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { cartErrorMessageKey, cartNoticeMessage } from '~~/shared/utils/customer-prices';
+import {
+  CART_ALERTS,
+  cartErrorMessageKey,
+  cartNoticeMessage,
+} from '~~/shared/utils/customer-prices';
 
 const cartStore = useCartStore();
 const { t } = useLocale();
@@ -89,6 +93,13 @@ const replacedNotice = computed(() => {
   return message ? t(message.key, message.params) : '';
 });
 
+// A cart that cannot be shown for this buyer yet (being moved, no company chosen, account unread).
+const cartAlert = computed(() =>
+  cartStore.lastError && CART_ALERTS.includes(cartStore.lastError)
+    ? t(cartErrorMessageKey(cartStore.lastError, 'cartWait'))
+    : ''
+);
+
 useSeoMeta({ title: () => t('cart') });
 </script>
 
@@ -103,13 +114,8 @@ useSeoMeta({ title: () => t('cart') });
       <p v-if="replacedNotice" class="mt-4" role="status" data-testid="cart-replaced-notice">
         {{ replacedNotice }}
       </p>
-      <p
-        v-if="cartStore.lastError === 'CART_MOVE_FAILED'"
-        class="text-accent mt-4"
-        role="alert"
-        data-testid="cart-move-failed"
-      >
-        {{ t('cartMoveFailed') }}
+      <p v-if="cartAlert" class="text-accent mt-4" role="alert" data-testid="cart-alert">
+        {{ cartAlert }}
       </p>
       <p v-if="recovering" class="text-muted">…</p>
       <div

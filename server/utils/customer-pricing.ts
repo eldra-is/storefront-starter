@@ -102,7 +102,13 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
     // The session may just have ended (401) or the gateway is down: keep what is stored and let the
     // priced routes decide per call.
     if (!(await readShopSession(event))) return SIGNED_OUT_PRICING;
-    return { signedIn: true, customerId: stored, needsCompany: false, customerName: null };
+    return {
+      signedIn: true,
+      customerId: stored,
+      needsCompany: false,
+      customerName: null,
+      noCompany: false,
+    };
   }
   const choice = activeCompany(stored, memberships);
   const nameOf = (id: string) =>
@@ -118,6 +124,7 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
       customerId: choice.customerId,
       needsCompany: false,
       customerName: nameOf(choice.customerId),
+      noCompany: false,
     };
   }
   // A stored company the person no longer belongs to is forgotten.
@@ -127,6 +134,7 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
     customerId: null,
     needsCompany: choice.kind === 'choose',
     customerName: null,
+    noCompany: choice.kind === 'none',
   };
 }
 

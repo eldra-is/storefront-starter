@@ -68,5 +68,6 @@
   "cartMovedToYourCompanyMissing": "Karfan þín var færð á fyrirtækið þitt og verðlögð upp á nýtt. Ekki tókst að færa {missing} vöru(r).",
   "cartMovedToGuest": "Þú ert ekki lengur skráð(ur) inn, svo karfan þín var færð í gestakörfu á listaverði.",
   "cartMovedToGuestMissing": "Þú ert ekki lengur skráð(ur) inn, svo karfan þín var færð í gestakörfu á listaverði. Ekki tókst að færa {missing} vöru(r).",
-  "cartMoveFailed": "Ekki tókst að verðleggja körfuna fyrir fyrirtækið þitt í augnablikinu. Vörurnar eru geymdar; reyndu aftur eftir smástund."
+  "cartMoveFailed": "Ekki tókst að verðleggja körfuna fyrir fyrirtækið þitt í augnablikinu. Vörurnar eru geymdar; reyndu aftur eftir smástund.",
+  "cartWait": "Ekki tókst að staðfesta verð fyrirtækisins í augnablikinu, svo karfan er ekki sýnd. Vörurnar eru geymdar; reyndu aftur eftir smástund."
 }
