@@ -7,6 +7,7 @@ import {
   loginCookieName,
   loginKey,
   mergeRefreshed,
+  nextRefreshStep,
   randomId,
   refreshFailure,
   resolveRefreshConflict,
@@ -158,17 +159,14 @@ async function refreshOnce(
       throw new SessionRefreshError(refreshFailure(error));
     }
     // Another server may have refreshed first and rotated the token: look before ending anything.
-    const conflict = resolveRefreshConflict(
-      session.refreshToken,
-      await readStored(sessionId),
-      Date.now()
+    const step = nextRefreshStep(
+      resolveRefreshConflict(session.refreshToken, await readStored(sessionId), Date.now()),
+      retried
     );
-    if (conflict.action === 'use') return conflict.session;
-    if (conflict.action === 'retry' && !retried) {
-      return refreshOnce(sessionId, conflict.session, client, true);
-    }
-    if (conflict.action === 'end') await store().removeItem(sessionKey(sessionId));
-    throw new SessionRefreshError(refreshFailure(error));
+    if (step.kind === 'use') return step.session;
+    if (step.kind === 'retry') return refreshOnce(sessionId, step.session, client, true);
+    if (step.failure.endSession) await store().removeItem(sessionKey(sessionId));
+    throw new SessionRefreshError(step.failure);
   }
 }
 

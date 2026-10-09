@@ -22,6 +22,9 @@ export default defineNuxtConfig({
     shopClientId: env.shopClientId,
     shopClientSecret: '',
     sessionStorage: { driver: env.sessionStorageDriver, url: '' },
+    // NUXT_TRUST_PROXY=true behind a TLS-terminating proxy: the request origin (sign-out check, OAuth
+    // redirect URI) then comes from X-Forwarded-Host/-Proto. Leave it off when nothing strips them.
+    trustProxy: env.trustProxy,
     public: {
       eldraApiBaseUrl: env.apiBaseUrl,
       // The browser needs the organization for its cart calls; it is public data.

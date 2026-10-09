@@ -1,8 +1,13 @@
 import { defineDriver } from 'unstorage';
-import { BoundedTtlStore } from '~~/shared/utils/bounded-store';
+import { PartitionedTtlStore } from '~~/shared/utils/bounded-store';
 
-/** At most this many sessions and logins in flight per server; the least recently used go first. */
+/** At most this many sessions per server; the least recently used go first. */
 export const MEMORY_SESSION_MAX_ENTRIES = 10_000;
+/**
+ * Pending logins have their own, smaller cap: starting a login needs no account, so a flood of them
+ * can only push out other pending logins, never a session.
+ */
+export const MEMORY_LOGIN_MAX_ENTRIES = 2_000;
 /** Expired records are swept this often, so abandoned logins do not wait for a read to leave. */
 export const MEMORY_SESSION_SWEEP_MS = 5 * 60 * 1000;
 
@@ -11,7 +16,10 @@ export const MEMORY_SESSION_SWEEP_MS = 5 * 60 * 1000;
  * busy single-server storefront would keep every abandoned login and session for the process life.
  */
 export const boundedMemoryDriver = defineDriver(() => {
-  const store = new BoundedTtlStore({ maxEntries: MEMORY_SESSION_MAX_ENTRIES });
+  const store = new PartitionedTtlStore({
+    partitions: [{ prefix: 'login:', maxEntries: MEMORY_LOGIN_MAX_ENTRIES }],
+    defaultMaxEntries: MEMORY_SESSION_MAX_ENTRIES,
+  });
   const sweeper = setInterval(() => store.sweep(), MEMORY_SESSION_SWEEP_MS);
   // Never keep the process alive for the sweep alone.
   sweeper.unref?.();

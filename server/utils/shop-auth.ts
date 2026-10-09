@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3';
 import { loadOrganizationSettings } from '~~/app/utils/organization';
-import { businessLoginEnabled, resolveShopIssuer } from '~~/shared/utils/auth';
+import { businessLoginEnabled, requestOrigin, resolveShopIssuer } from '~~/shared/utils/auth';
 import { createConfiguredEldraClient } from '~~/shared/utils/eldra-client';
 
 /**
@@ -29,6 +29,12 @@ export async function useShopAuth(event: H3Event) {
     clientSecret,
     enabled: businessLoginEnabled({ b2b: organization.b2b, clientSecret, issuer }),
     /** The origin this request came to; Keycloak checks it against the client's redirect URIs. */
-    origin: getRequestURL(event).origin,
+    origin: requestOrigin({
+      protocol: getRequestProtocol(event, { xForwardedProto: false }),
+      host: getRequestHost(event, { xForwardedHost: false }),
+      forwardedProto: getRequestHeader(event, 'x-forwarded-proto'),
+      forwardedHost: getRequestHeader(event, 'x-forwarded-host'),
+      trustProxy: config.trustProxy === true || String(config.trustProxy) === 'true',
+    }),
   };
 }

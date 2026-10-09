@@ -278,3 +278,49 @@ export function chooseSessionStore(options: {
 export function toAccountResponse(me: EldraCustomerMe): EldraCustomerMe {
   return { shopUser: me.shopUser, memberships: me.memberships };
 }
+
+export type RefreshStep =
+  | { kind: 'use'; session: ShopSession }
+  | { kind: 'retry'; session: ShopSession }
+  | { kind: 'fail'; failure: AuthFailure };
+
+/**
+ * What to do after a refresh answered `invalid_grant` and the store was read again. The stored
+ * session is deleted only when it still holds the token that failed; when a retry with a newer
+ * token has failed too, this request is signed out but the stored session is left for whoever
+ * wrote it.
+ */
+export function nextRefreshStep(conflict: RefreshConflict, retried: boolean): RefreshStep {
+  if (conflict.action === 'use') return { kind: 'use', session: conflict.session };
+  if (conflict.action === 'retry' && !retried) return { kind: 'retry', session: conflict.session };
+  return {
+    kind: 'fail',
+    failure: { statusCode: 401, endSession: conflict.action === 'end' },
+  };
+}
+
+const firstListValue = (value: string | null | undefined) =>
+  (value ?? '').split(',')[0]?.trim() ?? '';
+
+/**
+ * This request's origin, for the sign-out origin check and the OAuth redirect URI. Forwarded headers
+ * are anyone's to send, so they count only behind a proxy the operator says to trust
+ * (NUXT_TRUST_PROXY=true), and then only the first value, the one the outermost proxy set.
+ */
+export function requestOrigin(options: {
+  protocol: string;
+  host: string;
+  forwardedProto?: string | null;
+  forwardedHost?: string | null;
+  trustProxy: boolean;
+}): string {
+  let protocol = options.protocol;
+  let host = options.host;
+  if (options.trustProxy) {
+    const proto = firstListValue(options.forwardedProto).toLowerCase();
+    if (proto === 'http' || proto === 'https') protocol = proto;
+    const forwardedHost = firstListValue(options.forwardedHost);
+    if (forwardedHost) host = forwardedHost;
+  }
+  return `${protocol}://${host}`;
+}

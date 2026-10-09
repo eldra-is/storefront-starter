@@ -34,6 +34,7 @@ describe('resolveStorefrontEnv', () => {
       NUXT_PUBLIC_KEYCLOAK_BASE_URL: 'https://auth.example.com/',
       NUXT_SESSION_STORAGE_DRIVER: ' REDIS ',
       NUXT_SESSION_STORAGE_URL: ' redis://cache:6379 ',
+      NUXT_TRUST_PROXY: 'true',
     });
     expect(env).toEqual({
       apiBaseUrl: 'https://gateway.example.com/api',
@@ -47,6 +48,7 @@ describe('resolveStorefrontEnv', () => {
       shopIssuer: 'https://auth.example.com/realms/shop-1',
       keycloakBaseUrl: 'https://auth.example.com',
       sessionStorageDriver: 'redis',
+      trustProxy: true,
     });
   });
 
@@ -62,6 +64,7 @@ describe('resolveStorefrontEnv', () => {
     expect(env.shopIssuer).toBe('');
     expect(env.keycloakBaseUrl).toBe('');
     expect(env.sessionStorageDriver).toBe('');
+    expect(env.trustProxy).toBe(false);
   });
 
   it('never carries the client secret or the Redis URL into the build', () => {

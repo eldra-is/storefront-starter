@@ -25,6 +25,8 @@ export interface StorefrontEnv {
    * are deliberately not here: Nuxt reads them at runtime, so they never reach the build output.
    */
   sessionStorageDriver: string;
+  /** NUXT_TRUST_PROXY=true: take the request origin from X-Forwarded-Host/-Proto (behind a TLS proxy). */
+  trustProxy: boolean;
 }
 
 const clean = (value: string | undefined) => (value ?? '').trim();
@@ -44,5 +46,6 @@ export function resolveStorefrontEnv(env: Record<string, string | undefined>): S
     shopIssuer: origin(env.NUXT_PUBLIC_SHOP_ISSUER),
     keycloakBaseUrl: origin(env.NUXT_PUBLIC_KEYCLOAK_BASE_URL),
     sessionStorageDriver: clean(env.NUXT_SESSION_STORAGE_DRIVER).toLowerCase(),
+    trustProxy: clean(env.NUXT_TRUST_PROXY) === 'true',
   };
 }

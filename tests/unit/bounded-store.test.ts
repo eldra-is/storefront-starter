@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BoundedTtlStore } from '../../shared/utils/bounded-store';
+import { BoundedTtlStore, PartitionedTtlStore } from '../../shared/utils/bounded-store';
 
 describe('BoundedTtlStore', () => {
   it('returns what was stored until it expires', () => {
@@ -39,5 +39,53 @@ describe('BoundedTtlStore', () => {
     now = 5_000;
     expect(store.sweep()).toBe(1);
     expect(store.keys()).toEqual(['long']);
+  });
+});
+
+describe('PartitionedTtlStore', () => {
+  const make = () =>
+    new PartitionedTtlStore({
+      partitions: [{ prefix: 'login:', maxEntries: 3 }],
+      defaultMaxEntries: 5,
+      now: () => 0,
+    });
+
+  it('a flood of pending logins never evicts a session', () => {
+    const store = make();
+    for (let i = 0; i < 5; i += 1) store.set(`session:${i}`, `s${i}`);
+    for (let i = 0; i < 1000; i += 1) store.set(`login:${i}`, `l${i}`);
+    for (let i = 0; i < 5; i += 1) expect(store.get(`session:${i}`)).toBe(`s${i}`);
+    expect(store.keys().filter((key) => key.startsWith('login:'))).toEqual([
+      'login:997',
+      'login:998',
+      'login:999',
+    ]);
+  });
+
+  it('sessions are evicted only by other sessions', () => {
+    const store = make();
+    store.set('login:a', '1');
+    for (let i = 0; i < 6; i += 1) store.set(`session:${i}`, `s${i}`);
+    expect(store.get('login:a')).toBe('1');
+    expect(store.get('session:0')).toBeNull();
+    expect(store.get('session:5')).toBe('s5');
+  });
+
+  it('removes, clears and sweeps across partitions', () => {
+    let now = 0;
+    const store = new PartitionedTtlStore({
+      partitions: [{ prefix: 'login:', maxEntries: 3 }],
+      defaultMaxEntries: 5,
+      now: () => now,
+    });
+    store.set('login:a', '1', 1);
+    store.set('session:a', '2', 100);
+    store.remove('session:a');
+    expect(store.has('session:a')).toBe(false);
+    now = 2000;
+    expect(store.sweep()).toBe(1);
+    store.set('session:b', '3');
+    store.clear();
+    expect(store.keys()).toEqual([]);
   });
 });

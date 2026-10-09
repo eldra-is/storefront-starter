@@ -83,3 +83,64 @@ export class BoundedTtlStore {
     return removed;
   }
 }
+
+/**
+ * Several `BoundedTtlStore`s behind one key space, chosen by key prefix, each with its own cap. The
+ * session store gives pending logins (`login:`) their own small partition: anyone can start a login
+ * without signing in, so a flood of them may push out other pending logins but never a session.
+ */
+export class PartitionedTtlStore {
+  private readonly partitions: Array<{ prefix: string; store: BoundedTtlStore }>;
+  private readonly fallback: BoundedTtlStore;
+
+  constructor(options: {
+    partitions: Array<{ prefix: string; maxEntries: number }>;
+    defaultMaxEntries: number;
+    now?: () => number;
+  }) {
+    this.partitions = options.partitions.map(({ prefix, maxEntries }) => ({
+      prefix,
+      store: new BoundedTtlStore({ maxEntries, now: options.now }),
+    }));
+    this.fallback = new BoundedTtlStore({
+      maxEntries: options.defaultMaxEntries,
+      now: options.now,
+    });
+  }
+
+  private storeFor(key: string): BoundedTtlStore {
+    return this.partitions.find(({ prefix }) => key.startsWith(prefix))?.store ?? this.fallback;
+  }
+
+  private all(): BoundedTtlStore[] {
+    return [...this.partitions.map(({ store }) => store), this.fallback];
+  }
+
+  get(key: string): string | null {
+    return this.storeFor(key).get(key);
+  }
+
+  has(key: string): boolean {
+    return this.storeFor(key).has(key);
+  }
+
+  set(key: string, value: string, ttlSeconds?: number): void {
+    this.storeFor(key).set(key, value, ttlSeconds);
+  }
+
+  remove(key: string): void {
+    this.storeFor(key).remove(key);
+  }
+
+  keys(): string[] {
+    return this.all().flatMap((store) => store.keys());
+  }
+
+  clear(): void {
+    for (const store of this.all()) store.clear();
+  }
+
+  sweep(): number {
+    return this.all().reduce((removed, store) => removed + store.sweep(), 0);
+  }
+}

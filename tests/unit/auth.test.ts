@@ -22,6 +22,8 @@ import {
   loginCookieName,
   chooseSessionStore,
   toAccountResponse,
+  nextRefreshStep,
+  requestOrigin,
 } from '../../shared/utils/auth';
 
 describe('safeReturnTo', () => {
@@ -420,5 +422,74 @@ describe('toAccountResponse', () => {
       shopUser: me.shopUser,
       memberships: me.memberships,
     });
+  });
+});
+
+describe('nextRefreshStep', () => {
+  const session = {
+    issuer: 'i',
+    accessToken: 'a',
+    refreshToken: 'r2',
+    idToken: 'id',
+    expiresAt: 0,
+    refreshExpiresAt: undefined,
+  };
+
+  it('ends the session only when the store still holds the failed token', () => {
+    expect(nextRefreshStep({ action: 'end' }, false)).toEqual({
+      kind: 'fail',
+      failure: { statusCode: 401, endSession: true },
+    });
+    expect(nextRefreshStep({ action: 'end' }, true)).toEqual({
+      kind: 'fail',
+      failure: { statusCode: 401, endSession: true },
+    });
+  });
+
+  it('uses a session another request stored, and retries once with a newer token', () => {
+    expect(nextRefreshStep({ action: 'use', session }, false)).toEqual({ kind: 'use', session });
+    expect(nextRefreshStep({ action: 'retry', session }, false)).toEqual({
+      kind: 'retry',
+      session,
+    });
+  });
+
+  it('keeps the stored session when the retry also failed but the store moved on', () => {
+    expect(nextRefreshStep({ action: 'retry', session }, true)).toEqual({
+      kind: 'fail',
+      failure: { statusCode: 401, endSession: false },
+    });
+  });
+});
+
+describe('requestOrigin', () => {
+  const direct = { protocol: 'http', host: 'storefront:3000' };
+  const forwarded = { forwardedProto: 'https', forwardedHost: 'shop.example.com' };
+
+  it('ignores forwarded headers unless the proxy is trusted', () => {
+    expect(requestOrigin({ ...direct, ...forwarded, trustProxy: false })).toBe(
+      'http://storefront:3000'
+    );
+  });
+
+  it('uses the forwarded host and protocol behind a trusted proxy', () => {
+    expect(requestOrigin({ ...direct, ...forwarded, trustProxy: true })).toBe(
+      'https://shop.example.com'
+    );
+    expect(
+      requestOrigin({
+        ...direct,
+        forwardedProto: 'https, http',
+        forwardedHost: 'shop.example.com, internal:3000',
+        trustProxy: true,
+      })
+    ).toBe('https://shop.example.com');
+  });
+
+  it('falls back to the direct values when a trusted proxy sends nothing usable', () => {
+    expect(requestOrigin({ ...direct, trustProxy: true })).toBe('http://storefront:3000');
+    expect(
+      requestOrigin({ ...direct, forwardedProto: 'gopher', forwardedHost: ' ', trustProxy: true })
+    ).toBe('http://storefront:3000');
   });
 });
