@@ -53,7 +53,7 @@ export function pricedContext(caller: PricedCaller | null): EldraRequestContext 
 /**
  * What to do when a signed-in priced call fails, read by the gateway's `errorId`:
  * - `end-session`: business login is off (`FEATURE_DISABLED`, or `CART_CUSTOMER_PRICES_OFF` on a
- *   write to a company cart) or the token is no good (401). The session is ended and the call made
+ *   write to a company cart), the company is archived or unknown (`CART_CUSTOMER_UNAVAILABLE`) or the token is no good (401). The session is ended and the call made
  *   once more as a guest.
  * - `drop-company`: the stored company is no longer one of the person's (`SHOP_CUSTOMER_NOT_MEMBER`).
  *   It is forgotten and the call made once more without it.
@@ -69,7 +69,11 @@ export function pricedFailure(error: unknown, kind: 'read' | 'write'): PricedFai
   const { status, errorId } = (error ?? {}) as { status?: unknown; errorId?: unknown };
   if (status === 401) return 'end-session';
   if (status === 403 && errorId === 'FEATURE_DISABLED') return 'end-session';
-  if (status === 409 && errorId === 'CART_CUSTOMER_PRICES_OFF') return 'end-session';
+  if (
+    status === 409 &&
+    (errorId === 'CART_CUSTOMER_PRICES_OFF' || errorId === 'CART_CUSTOMER_UNAVAILABLE')
+  )
+    return 'end-session';
   if (status === 403 && errorId === 'SHOP_CUSTOMER_NOT_MEMBER') return 'drop-company';
   if (status === 403 && errorId === 'SHOP_NO_MEMBERSHIP') return 'guest';
   if (status === 409 && errorId === 'SHOP_CUSTOMER_REQUIRED' && kind === 'read') return 'guest';
@@ -265,7 +269,10 @@ export type CartRefusal =
   | 'prices-unavailable'
   | 'discount-not-for-customer-prices'
   | 'out-of-stock'
-  /** Business login was switched off: company prices are gone, so the cart moves to a guest cart. */
+  /**
+   * Business login was switched off, or the company is archived or unknown: company prices are
+   * gone, so the cart moves to a guest cart.
+   */
   | 'customer-prices-off'
   | null;
 
@@ -277,6 +284,8 @@ export function cartRefusal(errorId: string | undefined): CartRefusal {
       return 'new-cart-sign-in';
     case 'CART_CUSTOMER_PRICES_OFF':
     case 'ORDER_CUSTOMER_PRICES_OFF':
+    case 'CART_CUSTOMER_UNAVAILABLE':
+    case 'ORDER_CUSTOMER_UNAVAILABLE':
       return 'customer-prices-off';
     case 'SHOP_CUSTOMER_REQUIRED':
       return 'company-required';
@@ -304,6 +313,7 @@ const NOT_LINE_REFUSALS = new Set([
   'CART_CUSTOMER_MISMATCH',
   'CART_SIGN_IN_REQUIRED',
   'CART_CUSTOMER_PRICES_OFF',
+  'CART_CUSTOMER_UNAVAILABLE',
   'SHOP_CUSTOMER_REQUIRED',
 ]);
 const LINE_REFUSALS = new Set([

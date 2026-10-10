@@ -641,6 +641,40 @@ describe('cart store: business login switched off (P3-R8)', () => {
     expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
   });
 
+  it('CART_CUSTOMER_UNAVAILABLE from a cart route moves the basket to a guest cart', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    carts.g1 = cartOf('g1', [line('g1', 'v1'), line('g2', 'v2')]);
+    pricing.value = signedInAs('b');
+    serverFetch.mockRejectedValueOnce(routeError(409, 'CART_CUSTOMER_UNAVAILABLE'));
+    eldra.cart.addItem.mockResolvedValue({ id: 'g1' });
+
+    const cart = await store();
+    await cart.addItem('p-v2', 'v2', 1);
+
+    expect(pricing.value.signedIn).toBe(false);
+    expect(cart.cartId).toBe('g1');
+    expect(cart.boundTo).toBeNull();
+    expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
+  });
+
+  it('CART_CUSTOMER_UNAVAILABLE on a direct guest write moves the company cart too', async () => {
+    storage.setItem(CART_KEY, 'old');
+    carts.old = cartOf('old', [line('i1', 'v1')]);
+    carts.g1 = cartOf('g1', [line('g1', 'v1')]);
+    const cart = await store();
+    await cart.loadCart();
+    eldra.cart.updateItem.mockRejectedValueOnce(gatewayError(409, 'CART_CUSTOMER_UNAVAILABLE'));
+    eldra.cart.addItem.mockResolvedValueOnce({ id: 'g1' });
+    eldra.cart.updateItem.mockResolvedValueOnce(undefined);
+
+    await cart.updateQuantity('i1', 4);
+
+    expect(cart.cartId).toBe('g1');
+    expect(cart.notice?.reason).toBe('guest');
+  });
+
   it('CART_CUSTOMER_PRICES_OFF on a direct guest write moves the company cart too', async () => {
     storage.setItem(CART_KEY, 'old');
     carts.old = cartOf('old', [line('i1', 'v1')]);

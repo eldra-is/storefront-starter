@@ -90,6 +90,8 @@ describe('pricedFailure', () => {
     expect(pricedFailure(problem(401, 'SHOP_TOKEN_INVALID'), 'read')).toBe('end-session');
     // P3-R8: a write to a company cart once business login is off.
     expect(pricedFailure(problem(409, 'CART_CUSTOMER_PRICES_OFF'), 'write')).toBe('end-session');
+    // The company is archived or unknown: the same way out.
+    expect(pricedFailure(problem(409, 'CART_CUSTOMER_UNAVAILABLE'), 'write')).toBe('end-session');
   });
 
   it('drops a company the person no longer belongs to', () => {
@@ -158,6 +160,17 @@ describe('runPriced', () => {
     await expect(runPriced(run)).rejects.toBeInstanceOf(EldraHttpError);
     expect(call).toHaveBeenCalledTimes(2);
     expect(run.endSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('on CART_CUSTOMER_UNAVAILABLE ends the session without marking B2B off, and passes the guest refusal on', async () => {
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValue(problem(409, 'CART_CUSTOMER_UNAVAILABLE'));
+    const run = harness(call, { kind: 'write' });
+    await expect(runPriced(run)).rejects.toMatchObject({ errorId: 'CART_CUSTOMER_UNAVAILABLE' });
+    expect(run.endSession).toHaveBeenCalledExactlyOnceWith({ featureDisabled: false });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls[1]?.[0]).toBeUndefined();
   });
 
   it('on CART_CUSTOMER_PRICES_OFF ends the session as B2B off, and passes the guest refusal on', async () => {
@@ -414,6 +427,8 @@ describe('cart refusals', () => {
     expect(cartRefusal('CART_SIGN_IN_REQUIRED')).toBe('new-cart-sign-in');
     expect(cartRefusal('CART_CUSTOMER_PRICES_OFF')).toBe('customer-prices-off');
     expect(cartRefusal('ORDER_CUSTOMER_PRICES_OFF')).toBe('customer-prices-off');
+    expect(cartRefusal('CART_CUSTOMER_UNAVAILABLE')).toBe('customer-prices-off');
+    expect(cartRefusal('ORDER_CUSTOMER_UNAVAILABLE')).toBe('customer-prices-off');
   });
 
   it('maps the other customer-price refusals', () => {
@@ -632,6 +647,7 @@ describe('isPermanentLineRefusal (a cart move leaves a line behind only for thes
     expect(isPermanentLineRefusal(409, 'CART_SIGN_IN_REQUIRED')).toBe(false);
     expect(isPermanentLineRefusal(409, 'CART_CUSTOMER_MISMATCH')).toBe(false);
     expect(isPermanentLineRefusal(409, 'CART_CUSTOMER_PRICES_OFF')).toBe(false);
+    expect(isPermanentLineRefusal(409, 'CART_CUSTOMER_UNAVAILABLE')).toBe(false);
     expect(isPermanentLineRefusal(409, 'SHOP_CUSTOMER_REQUIRED')).toBe(false);
     expect(isPermanentLineRefusal(400, 'BAD_REQUEST')).toBe(false);
   });
