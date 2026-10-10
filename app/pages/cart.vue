@@ -280,6 +280,14 @@ useSeoMeta({ title: () => t('cart') });
             data-testid="cart-checkout"
             >{{ t('checkout') }}</a
           >
+          <!-- A signed-in business customer may also order on account: the supplier invoices later. -->
+          <NuxtLink
+            v-if="cartStore.accountOrderAllowed"
+            to="/checkout/account"
+            class="border-ink bg-paper text-ink hover:bg-ink hover:text-paper mt-3 inline-flex min-h-11 w-full items-center justify-center border px-6 text-[11px] tracking-[0.14em] uppercase transition-colors duration-150"
+            data-testid="cart-order-on-account"
+            >{{ t('orderOnAccount') }}</NuxtLink
+          >
         </aside>
       </div>
     </ClientOnly>

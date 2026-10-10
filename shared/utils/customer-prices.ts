@@ -52,11 +52,13 @@ export function pricedContext(caller: PricedCaller | null): EldraRequestContext 
 
 /**
  * What to do when a signed-in priced call fails, read by the gateway's `errorId`:
- * - `end-session`: business login is off (`FEATURE_DISABLED`, or `CART_CUSTOMER_PRICES_OFF` on a
- *   write to a company cart), the company is archived or unknown (`CART_CUSTOMER_UNAVAILABLE`) or the token is no good (401). The session is ended and the call made
- *   once more as a guest.
- * - `drop-company`: the stored company is no longer one of the person's (`SHOP_CUSTOMER_NOT_MEMBER`).
- *   It is forgotten and the call made once more without it.
+ * - `end-session`: business login is off (`FEATURE_DISABLED`, or `CART_CUSTOMER_PRICES_OFF` /
+ *   `ORDER_CUSTOMER_PRICES_OFF` for a company cart), the person's only company is archived or unknown
+ *   (`CART_CUSTOMER_UNAVAILABLE` / `ORDER_CUSTOMER_UNAVAILABLE`) or the token is no good (401). The
+ *   session is ended and the call made once more as a guest.
+ * - `drop-company`: the stored company is no longer one of the person's (`SHOP_CUSTOMER_NOT_MEMBER`),
+ *   or it is archived or unknown while the person has other companies (`companies` > 1). Only that
+ *   company is forgotten, the session is kept, and the call made once more without it.
  * - `guest`: the person has no company (`SHOP_NO_MEMBERSHIP`), or, on a read, has several and has
  *   not chosen one (`SHOP_CUSTOMER_REQUIRED`). The call is made as a guest (list prices, shown
  *   without the company label) and the session is kept.
@@ -65,15 +67,45 @@ export function pricedContext(caller: PricedCaller | null): EldraRequestContext 
  */
 export type PricedFailure = 'end-session' | 'drop-company' | 'guest' | 'throw';
 
-export function pricedFailure(error: unknown, kind: 'read' | 'write'): PricedFailure {
+/** Business login is off: the organization cache is stale and the session must end. */
+export const B2B_OFF_ERRORS: ReadonlySet<string> = new Set([
+  'FEATURE_DISABLED',
+  'CART_CUSTOMER_PRICES_OFF',
+  'ORDER_CUSTOMER_PRICES_OFF',
+]);
+
+/** The active company is archived or unknown (409): what happens depends on the person's other companies. */
+export function isCompanyUnavailable(error: unknown): boolean {
+  const { status, errorId } = (error ?? {}) as { status?: unknown; errorId?: unknown };
+  return (
+    status === 409 &&
+    (errorId === 'CART_CUSTOMER_UNAVAILABLE' || errorId === 'ORDER_CUSTOMER_UNAVAILABLE')
+  );
+}
+
+/**
+ * How many companies the person can buy for, to tell `drop-company` from `end-session` when the
+ * active one is no longer available. A count that cannot be read is 1: the session ends, as before.
+ */
+export async function companiesFor(
+  error: unknown,
+  count: (() => Promise<number>) | undefined
+): Promise<number> {
+  if (!count || !isCompanyUnavailable(error)) return 1;
+  return count().catch(() => 1);
+}
+
+export function pricedFailure(
+  error: unknown,
+  kind: 'read' | 'write',
+  /** The companies the person can buy for; counted only for `isCompanyUnavailable` refusals. */
+  companies = 1
+): PricedFailure {
   const { status, errorId } = (error ?? {}) as { status?: unknown; errorId?: unknown };
   if (status === 401) return 'end-session';
   if (status === 403 && errorId === 'FEATURE_DISABLED') return 'end-session';
-  if (
-    status === 409 &&
-    (errorId === 'CART_CUSTOMER_PRICES_OFF' || errorId === 'CART_CUSTOMER_UNAVAILABLE')
-  )
-    return 'end-session';
+  if (status === 409 && B2B_OFF_ERRORS.has(String(errorId))) return 'end-session';
+  if (isCompanyUnavailable(error)) return companies > 1 ? 'drop-company' : 'end-session';
   if (status === 403 && errorId === 'SHOP_CUSTOMER_NOT_MEMBER') return 'drop-company';
   if (status === 403 && errorId === 'SHOP_NO_MEMBERSHIP') return 'guest';
   if (status === 409 && errorId === 'SHOP_CUSTOMER_REQUIRED' && kind === 'read') return 'guest';
@@ -90,15 +122,14 @@ export interface PricedRun<T> {
   endSession: (reason: { featureDisabled: boolean }) => Promise<void>;
   /** Forgets the stored active company. */
   dropCompany: () => Promise<void>;
+  /** The companies the person can buy for (from /me); asked only when the active one is unavailable. */
+  companyCount?: () => Promise<number>;
   /**
    * The company a signed-in call sent without `X-Customer-Id` was priced for (the gateway used the
    * person's only company), so PRICED_FOR_HEADER names it; null when it cannot be told.
    */
   resolveCustomer?: () => Promise<string | null>;
 }
-
-/** Business login is off: the organization cache is stale and the session must end. */
-const B2B_OFF_ERRORS = new Set(['FEATURE_DISABLED', 'CART_CUSTOMER_PRICES_OFF']);
 
 /**
  * Runs a priced call: as the signed-in person when there is one, else as a guest. A refusal that
@@ -124,7 +155,7 @@ export async function runPriced<T>(run: PricedRun<T>): Promise<T> {
   try {
     return await as(run.caller);
   } catch (error) {
-    const failure = pricedFailure(error, run.kind);
+    const failure = pricedFailure(error, run.kind, await companiesFor(error, run.companyCount));
     if (failure === 'end-session') {
       const { errorId } = (error ?? {}) as { errorId?: unknown };
       await run.endSession({ featureDisabled: B2B_OFF_ERRORS.has(String(errorId)) });
@@ -174,19 +205,27 @@ export function boundCompanyOf(header: string | null | undefined): string | null
 /** The status and the gateway's reason of a failed call, for a route to answer with (never the message). */
 export interface RouteError {
   statusCode: number;
-  data: { errorId?: string; code?: string };
+  /**
+   * The reason, plus the only problem details a page acts on: the order a cart already became
+   * (`SALES_ORDER_CART_ALREADY_ORDERED`) and the line that cannot be ordered
+   * (`SALES_ORDER_LINE_INVALID`). Nothing else from `errors` is passed on (no credit figures).
+   */
+  data: { errorId?: string; code?: string; salesOrderId?: string; variantId?: string };
 }
 
 export function routeErrorOf(error: unknown): RouteError {
-  const { status, errorId, code } = (error ?? {}) as {
+  const { status, errorId, code, errors } = (error ?? {}) as {
     status?: unknown;
     errorId?: unknown;
     code?: unknown;
+    errors?: { salesOrderId?: unknown; variantId?: unknown } | null;
   };
   const statusCode = typeof status === 'number' && status >= 400 && status < 600 ? status : 502;
   const data: RouteError['data'] = {};
   if (typeof errorId === 'string') data.errorId = errorId;
   if (typeof code === 'string') data.code = code;
+  if (typeof errors?.salesOrderId === 'string') data.salesOrderId = errors.salesOrderId;
+  if (typeof errors?.variantId === 'string') data.variantId = errors.variantId;
   return { statusCode, data };
 }
 

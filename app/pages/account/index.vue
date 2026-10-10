@@ -102,6 +102,14 @@ useSeoMeta({ title: () => t('account'), robots: 'noindex, nofollow' });
         </ul>
       </section>
 
+      <section v-if="pricing.customerId" data-testid="account-orders">
+        <h2 class="text-[11px] tracking-[0.14em] uppercase">{{ t('orders') }}</h2>
+        <p class="text-muted mt-3 text-sm">{{ t('ordersIntro') }}</p>
+        <NuxtLink to="/account/orders" :class="[button, 'mt-4']" data-testid="account-orders-link">
+          {{ t('viewOrders') }}
+        </NuxtLink>
+      </section>
+
       <section v-if="choosable.length > 1" data-testid="account-company-picker">
         <h2 class="text-[11px] tracking-[0.14em] uppercase">{{ t('chooseCompany') }}</h2>
         <p v-if="pricing.needsCompany" class="text-accent mt-3 text-xs" role="status">

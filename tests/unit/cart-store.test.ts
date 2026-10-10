@@ -742,3 +742,66 @@ describe('cart store: another tab (S-M6)', () => {
     expect(cart.checkoutUrl).toBe('https://checkout.example/new');
   });
 });
+
+describe('cart store: order on account (B2B phase 5)', () => {
+  it('is offered only for a company cart with lines, bound to the company the person buys for', async () => {
+    storage.setItem(CART_KEY, 'c');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.c = cartOf('c', [line('i1', 'v1')]);
+    pricing.value = signedInAs('b');
+    const cart = await store();
+    expect(cart.accountOrderAllowed).toBe(false); // not read yet
+    await cart.loadCart();
+    expect(cart.accountOrderAllowed).toBe(true);
+
+    pricing.value = { ...SIGNED_OUT_PRICING };
+    expect(cart.accountOrderAllowed).toBe(false);
+  });
+
+  it('is not offered for a guest cart or an empty one', async () => {
+    storage.setItem(CART_KEY, 'g');
+    carts.g = cartOf('g', []);
+    pricing.value = signedInAs('b');
+    const cart = await store();
+    await cart.loadCart();
+    expect(cart.accountOrderAllowed).toBe(false);
+  });
+
+  it('rebindCart replays the lines into a new cart for the company', async () => {
+    storage.setItem(CART_KEY, 'old');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.old = cartOf('old', [line('i1', 'v1', 3)]);
+    carts.new = cartOf('new', [line('n1', 'v1', 3)]);
+    pricing.value = signedInAs('b', 'Beta hf.');
+    const cart = await store();
+    await cart.loadCart();
+    serverFetch.mockResolvedValueOnce({ id: 'new' });
+
+    await expect(cart.rebindCart()).resolves.toBe(true);
+
+    expect(serverFetch.mock.calls[0]).toEqual([
+      '/api/cart/items',
+      { method: 'POST', body: { productId: 'p-v1', variantId: 'v1', quantity: 3 } },
+    ]);
+    expect(cart.cartId).toBe('new');
+    expect(cart.boundTo).toBe('b');
+  });
+
+  it('a write refused for want of a company leaves the person signed in, choosing a company', async () => {
+    storage.setItem(CART_KEY, 'c');
+    storage.setItem(BOUND_KEY, 'b');
+    carts.c = cartOf('c', [line('i1', 'v1')]);
+    pricing.value = signedInAs('b');
+    const cart = await store();
+    await cart.loadCart();
+    // The server dropped the company (it is no longer available) and the person has others.
+    serverFetch.mockRejectedValueOnce(routeError(409, 'SHOP_CUSTOMER_REQUIRED'));
+
+    await expect(cart.addItem('p-v2', 'v2', 1)).rejects.toBeTruthy();
+
+    expect(pricing.value).toMatchObject({ signedIn: true, customerId: null, needsCompany: true });
+    expect(cart.lastError).toBe('COMPANY_REQUIRED');
+    expect(cart.cartId).toBe('c');
+    expect(cart.checkoutUrl).toBeNull();
+  });
+});

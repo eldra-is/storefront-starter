@@ -76,6 +76,21 @@ export const useCartStore = defineStore('cart', () => {
     }
   });
 
+  /**
+   * Order on account (/checkout/account) is offered for a company cart with lines that is bound to
+   * the company the person buys for now, and not being moved: the sales order is placed from it.
+   */
+  const accountOrderAllowed = computed(
+    () =>
+      Boolean(cartId.value && cart.value && count.value > 0) &&
+      !moving.value &&
+      !moveFailed.value &&
+      pricing.value.signedIn &&
+      Boolean(pricing.value.customerId) &&
+      boundTo.value === pricing.value.customerId &&
+      action.value === 'keep'
+  );
+
   function setBoundTo(customerId: string | null) {
     boundTo.value = customerId;
     if (customerId) binding.remember(customerId);
@@ -311,8 +326,20 @@ export const useCartStore = defineStore('cart', () => {
   function noteRefusal(err: unknown) {
     const refusal = cartRefusal(errorIdOf(err));
     if (refusal === 'out-of-stock') lastError.value = 'INSUFFICIENT_STOCK';
-    else if (refusal === 'company-required') lastError.value = 'COMPANY_REQUIRED';
-    else if (refusal === 'prices-unavailable') lastError.value = 'PRICES_UNAVAILABLE';
+    else if (refusal === 'company-required') {
+      lastError.value = 'COMPANY_REQUIRED';
+      // The server has no company for this person now (none chosen, or it dropped one that is no
+      // longer available): they are still signed in and must choose; the cart waits until then.
+      if (pricing.value.signedIn) {
+        pricing.value = {
+          ...pricing.value,
+          customerId: null,
+          customerName: null,
+          needsCompany: true,
+          noCompany: false,
+        };
+      }
+    } else if (refusal === 'prices-unavailable') lastError.value = 'PRICES_UNAVAILABLE';
     else if (refusal === 'discount-not-for-customer-prices')
       lastError.value = 'DISCOUNT_NOT_FOR_CUSTOMER_PRICES';
   }
@@ -503,6 +530,17 @@ export const useCartStore = defineStore('cart', () => {
     return { restored, missing };
   }
 
+  /**
+   * Re-binds the cart to the company the person buys for, by replaying its lines into a new company
+   * cart (the order on account answered SALES_ORDER_CART_NOT_BOUND). False when the move could not
+   * be made; the old cart is kept.
+   */
+  async function rebindCart(): Promise<boolean> {
+    lastError.value = null;
+    notice.value = null;
+    return moveCart('company');
+  }
+
   return {
     cartId,
     cart,
@@ -515,6 +553,8 @@ export const useCartStore = defineStore('cart', () => {
     drawerOpen,
     count,
     checkoutUrl,
+    accountOrderAllowed,
+    rebindCart,
     loadCart,
     addItem,
     updateQuantity,

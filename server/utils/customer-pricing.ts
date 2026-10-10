@@ -1,4 +1,4 @@
-import type { H3Event } from 'h3';
+import { isError, type H3Event } from 'h3';
 import type { EldraCustomerMe, EldraRequestContext } from '@eldrajs/sdk';
 import { dropOrganizationCache } from '~~/app/utils/organization';
 import {
@@ -14,10 +14,12 @@ import {
   PRICED_RESPONSE_HEADERS,
   routeErrorOf,
   runPriced,
+  selectableCompanies,
   SIGNED_OUT_PRICING,
   type CustomerPricingState,
   type PricedCaller,
 } from '~~/shared/utils/customer-prices';
+import { runBusiness } from '~~/shared/utils/sales-orders';
 
 type ShopAuth = Awaited<ReturnType<typeof useShopAuth>>;
 interface CurrentSession {
@@ -144,6 +146,52 @@ export async function readPricingState(event: H3Event): Promise<CustomerPricingS
   };
 }
 
+/** Refuses a write that does not come from this site's own pages (403), as the company choice. */
+function requireSameOrigin(event: H3Event, auth: ShopAuth) {
+  const sameOrigin = isSameOriginRequest({
+    secFetchSite: getRequestHeader(event, 'sec-fetch-site'),
+    origin: getRequestHeader(event, 'origin'),
+    requestOrigin: auth.origin,
+  });
+  if (!sameOrigin) throw createError({ statusCode: 403, statusMessage: 'Forbidden' });
+}
+
+/**
+ * This request's session (refreshed when due), or null when signed out or when the refresh just
+ * ended it (401). An outage refreshing the token is thrown (502).
+ */
+async function sessionOrGuest(event: H3Event, auth: ShopAuth): Promise<CurrentSession | null> {
+  if (!auth.enabled) return null;
+  try {
+    return await freshShopSession(event, auth);
+  } catch (error) {
+    // 401: the refresh ended the session, so this person is a guest now; else an outage.
+    if ((error as { statusCode?: number }).statusCode !== 401) throw error;
+    return null;
+  }
+}
+
+/**
+ * What a failed signed-in call may do to the session: end it (dropping the cached organization when
+ * B2B is off), forget the active company, and count the person's companies (from the cached /me) to
+ * tell the two apart when the active company is no longer available.
+ */
+function sessionActions(event: H3Event, auth: ShopAuth, current: CurrentSession | null) {
+  return {
+    endSession: async ({ featureDisabled }: { featureDisabled: boolean }) => {
+      if (featureDisabled) dropOrganizationCache(auth.orgKey);
+      await endShopSession(event);
+    },
+    dropCompany: async () => {
+      if (current) await clearActiveCompany(current.sessionId);
+    },
+    companyCount: async () => {
+      if (!current) return 0;
+      return selectableCompanies((await loadShopMe(event, auth, current)).memberships).length;
+    },
+  };
+}
+
 /**
  * A catalog read or a cart write for this request: as the signed-in person and their active
  * company, or as a guest. Sets `private, no-store` first, whatever happens next; a write must come
@@ -160,48 +208,22 @@ export async function pricedCall<T>(
   // Before anything can fail: an error answer is no more cacheable than a price.
   setHeaders({ ...PRICED_RESPONSE_HEADERS });
   const auth = await useShopAuth(event);
-  if (
-    kind === 'write' &&
-    !isSameOriginRequest({
-      secFetchSite: getRequestHeader(event, 'sec-fetch-site'),
-      origin: getRequestHeader(event, 'origin'),
-      requestOrigin: auth.origin,
-    })
-  ) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden' });
-  }
-  let caller: PricedCaller | null = null;
-  let current: CurrentSession | null = null;
-  let sessionId: string | null = null;
-  if (auth.enabled) {
-    try {
-      current = await freshShopSession(event, auth);
-    } catch (error) {
-      // 401: the refresh ended the session, so this person is a guest now; else an outage.
-      if ((error as { statusCode?: number }).statusCode !== 401) throw error;
-    }
-    if (current) {
-      sessionId = current.sessionId;
-      caller = {
+  if (kind === 'write') requireSameOrigin(event, auth);
+  const current = await sessionOrGuest(event, auth);
+  const caller: PricedCaller | null = current
+    ? {
         accessToken: current.session.accessToken,
         orgId: auth.orgId,
         customerId: await readActiveCompany(current.sessionId),
-      };
-    }
-  }
+      }
+    : null;
   try {
     return await runPriced({
       kind,
       caller,
       setHeaders,
       call: (context) => call(auth.eldra, context),
-      endSession: async ({ featureDisabled }) => {
-        if (featureDisabled) dropOrganizationCache(auth.orgKey);
-        await endShopSession(event);
-      },
-      dropCompany: async () => {
-        if (sessionId) await clearActiveCompany(sessionId);
-      },
+      ...sessionActions(event, auth, current),
       // The gateway priced for the person's only company: name it from the (cached) /me, so the
       // browser binds its cart to the company the server used, not to its own possibly stale idea.
       resolveCustomer: async () => {
@@ -211,6 +233,53 @@ export async function pricedCall<T>(
       },
     });
   } catch (error) {
+    const { statusCode, data } = routeErrorOf(error);
+    throw createError({ statusCode, data });
+  }
+}
+
+/**
+ * A sales-order or delivery-location call for this request: only as the signed-in person, always
+ * for their active company (`runBusiness`); never as a guest. The active company is the stored
+ * choice, else the person's only company (named from /me, so `X-Customer-Id` is always sent). Sets
+ * `private, no-store` first; 404 while business login is off; a write must come from this site's
+ * own pages (403). Failures answer the gateway's status and reason (and the order id or line a page
+ * acts on), never its message.
+ */
+export async function businessCall<T>(
+  event: H3Event,
+  kind: 'read' | 'write',
+  call: (eldra: ShopAuth['eldra'], context: EldraRequestContext) => Promise<T>
+): Promise<T> {
+  const setHeaders = (headers: Record<string, string>) => setResponseHeaders(event, headers);
+  setHeaders({ ...PRICED_RESPONSE_HEADERS });
+  const auth = await useShopAuth(event);
+  if (!auth.enabled) throw createError({ statusCode: 404, statusMessage: 'Not found' });
+  if (kind === 'write') requireSameOrigin(event, auth);
+  try {
+    const current = await sessionOrGuest(event, auth);
+    let customerId = current ? await readActiveCompany(current.sessionId) : null;
+    if (current && !customerId) {
+      const choice = activeCompany(null, (await loadShopMe(event, auth, current)).memberships);
+      if (choice.kind === 'only') {
+        customerId = choice.customerId;
+        await saveActiveCompany(current.sessionId, current.session, customerId).catch(
+          () => undefined
+        );
+      }
+    }
+    const caller: PricedCaller | null = current
+      ? { accessToken: current.session.accessToken, orgId: auth.orgId, customerId }
+      : null;
+    return await runBusiness({
+      caller,
+      setHeaders,
+      call: (context) => call(auth.eldra, context),
+      ...sessionActions(event, auth, current),
+    });
+  } catch (error) {
+    // This site's own refusals (an outage refreshing the token, /me) already carry their status.
+    if (isError(error)) throw error;
     const { statusCode, data } = routeErrorOf(error);
     throw createError({ statusCode, data });
   }

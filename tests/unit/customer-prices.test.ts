@@ -113,6 +113,63 @@ describe('pricedFailure', () => {
   });
 });
 
+describe('pricedFailure: a company that is no longer available', () => {
+  // [error id, companies the person has, what happens]
+  const table: [string, number, string][] = [
+    ['CART_CUSTOMER_UNAVAILABLE', 2, 'drop-company'],
+    ['CART_CUSTOMER_UNAVAILABLE', 1, 'end-session'],
+    ['ORDER_CUSTOMER_UNAVAILABLE', 2, 'drop-company'],
+    ['ORDER_CUSTOMER_UNAVAILABLE', 1, 'end-session'],
+    ['ORDER_CUSTOMER_UNAVAILABLE', 0, 'end-session'],
+    ['CART_CUSTOMER_PRICES_OFF', 2, 'end-session'],
+    ['ORDER_CUSTOMER_PRICES_OFF', 2, 'end-session'],
+  ];
+  it.each(table)('%s with %i companies → %s', (errorId, companies, expected) => {
+    expect(pricedFailure(problem(409, errorId), 'write', companies)).toBe(expected);
+  });
+
+  it('counts as one company when the count is not given (as before)', () => {
+    expect(pricedFailure(problem(409, 'CART_CUSTOMER_UNAVAILABLE'), 'write')).toBe('end-session');
+  });
+});
+
+describe('runPriced: a company that is no longer available, for a person with several', () => {
+  it('drops only that company, keeps the session and retries once without it', async () => {
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValueOnce(problem(409, 'CART_CUSTOMER_UNAVAILABLE'))
+      .mockRejectedValueOnce(problem(409, 'SHOP_CUSTOMER_REQUIRED'));
+    const companyCount = vi.fn(async () => 2);
+    const run = harness(call, { kind: 'write', companyCount });
+    await expect(runPriced(run)).rejects.toMatchObject({ errorId: 'SHOP_CUSTOMER_REQUIRED' });
+    expect(run.dropCompany).toHaveBeenCalledTimes(1);
+    expect(run.endSession).not.toHaveBeenCalled();
+    expect(call.mock.calls[1]?.[0]?.headers).toEqual({ Authorization: 'Bearer tok' });
+  });
+
+  it('with one company ends the session as before', async () => {
+    const call = vi
+      .fn<PricedRun<string>['call']>()
+      .mockRejectedValue(problem(409, 'CART_CUSTOMER_UNAVAILABLE'));
+    const run = harness(call, { kind: 'write', companyCount: vi.fn(async () => 1) });
+    await expect(runPriced(run)).rejects.toMatchObject({ errorId: 'CART_CUSTOMER_UNAVAILABLE' });
+    expect(run.endSession).toHaveBeenCalledTimes(1);
+    expect(run.dropCompany).not.toHaveBeenCalled();
+  });
+
+  it('counts the companies only for that refusal', async () => {
+    const companyCount = vi.fn(async () => 2);
+    const run = harness(
+      async () => {
+        throw problem(503, 'CUSTOMER_PRICES_UNAVAILABLE');
+      },
+      { companyCount }
+    );
+    await expect(runPriced(run)).rejects.toBeInstanceOf(EldraHttpError);
+    expect(companyCount).not.toHaveBeenCalled();
+  });
+});
+
 describe('runPriced', () => {
   it('sets private, no-store before calling, on success', async () => {
     const run = harness(async () => 'priced');
@@ -381,6 +438,34 @@ describe('routeErrorOf', () => {
     expect(routeErrorOf(problem(409, 'CART_SIGN_IN_REQUIRED', 'CONFLICT'))).toEqual({
       statusCode: 409,
       data: { errorId: 'CART_SIGN_IN_REQUIRED', code: 'CONFLICT' },
+    });
+  });
+
+  it('passes the order id and the line of a sales-order refusal, and nothing else from errors', () => {
+    const already = new EldraHttpError(new Response(null, { status: 409 }), {
+      code: 'CONFLICT',
+      errorId: 'SALES_ORDER_CART_ALREADY_ORDERED',
+      errors: { salesOrderId: 'so-1', other: 'x' },
+    });
+    expect(routeErrorOf(already).data).toEqual({
+      errorId: 'SALES_ORDER_CART_ALREADY_ORDERED',
+      code: 'CONFLICT',
+      salesOrderId: 'so-1',
+    });
+    const line = new EldraHttpError(new Response(null, { status: 400 }), {
+      code: 'BAD_REQUEST',
+      errorId: 'SALES_ORDER_LINE_INVALID',
+      errors: { variantId: 'v1' },
+    });
+    expect(routeErrorOf(line).data.variantId).toBe('v1');
+    const credit = new EldraHttpError(new Response(null, { status: 409 }), {
+      code: 'CONFLICT',
+      errorId: 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED',
+      errors: { limit: 100, exposure: 200 },
+    });
+    expect(routeErrorOf(credit).data).toEqual({
+      errorId: 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED',
+      code: 'CONFLICT',
     });
   });
 
