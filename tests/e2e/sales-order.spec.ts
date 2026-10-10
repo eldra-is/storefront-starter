@@ -10,7 +10,9 @@ import { addAnyProductToCart, goto } from './support/storefront';
  */
 const user = process.env.E2E_SHOP_USER ?? '';
 const password = process.env.E2E_SHOP_PASSWORD ?? '';
-const enabled = Boolean(user && password && process.env.E2E_SALES_ORDERS === '1');
+/** Business login is configured: the routes exist (404 otherwise) and can refuse. */
+const businessLogin = Boolean(user && password);
+const enabled = businessLogin && process.env.E2E_SALES_ORDERS === '1';
 
 async function signIn(page: Page) {
   await goto(page, '/account');
@@ -46,8 +48,9 @@ test.describe('Order on account', () => {
     await expect(page.getByTestId('header-cart-count')).toHaveCount(0);
 
     await goto(page, '/account/orders');
-    const row = page.locator('[data-testid^="sales-order-row-"]').first();
-    await expect(row).toBeVisible();
+    // Other runs may have placed orders too: find this one by its PO number.
+    const row = page.locator('[data-testid^="sales-order-row-"]', { hasText: po });
+    await expect(row).toHaveCount(1);
     await row.getByTestId('sales-order-link').click();
     await expect(page.getByTestId('sales-order-lines')).toBeVisible();
 
@@ -55,6 +58,10 @@ test.describe('Order on account', () => {
     await page.waitForURL((url) => url.pathname === '/cart');
     await expect(page.locator('[data-testid^="cart-line-"]').first()).toBeVisible();
   });
+});
+
+test.describe('Order on account routes', () => {
+  test.skip(!businessLogin, 'Set E2E_SHOP_USER and E2E_SHOP_PASSWORD to run business login.');
 
   test('the routes refuse another site, and a signed-out browser', async ({ page }) => {
     const crossSite = await page.request.post('/api/sales-orders', {

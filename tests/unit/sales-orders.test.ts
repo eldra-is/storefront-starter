@@ -13,6 +13,10 @@ import {
   attemptFingerprint,
   attemptFor,
   businessContext,
+  companyGoneMessage,
+  createPreviewSequence,
+  latestAnswer,
+  refreshesPreview,
   createOrderInput,
   idempotencyKeyOf,
   orderListQuery,
@@ -27,6 +31,7 @@ import {
   type BusinessRun,
   type CheckoutAttempt,
 } from '../../shared/utils/sales-orders';
+import { SIGNED_OUT_PRICING } from '../../shared/utils/customer-prices';
 
 const problem = (status: number, errorId?: string, errors?: Record<string, unknown>) =>
   new EldraHttpError(new Response(null, { status }), {
@@ -308,12 +313,72 @@ describe('salesOrderRefusal', () => {
   });
 
   it('a company that can no longer buy at its prices moves the person to a guest cart', () => {
-    for (const id of ['ORDER_CUSTOMER_PRICES_OFF', 'ORDER_CUSTOMER_UNAVAILABLE']) {
-      expect(salesOrderRefusal(problem(409, id))).toEqual({
-        action: 'to-guest',
-        message: 'salesOrderCompanyUnavailable',
-      });
+    expect(salesOrderRefusal(problem(409, 'ORDER_CUSTOMER_PRICES_OFF'))).toEqual({
+      action: 'to-guest',
+      message: 'salesOrderCompanyUnavailable',
+    });
+    // An unavailable company says nothing about list prices until who is buying is known again.
+    expect(salesOrderRefusal(problem(409, 'ORDER_CUSTOMER_UNAVAILABLE'))).toEqual({
+      action: 'to-guest',
+      message: 'salesOrderCompanyGone',
+    });
+  });
+
+  it('after re-reading who is buying, the message says what happened to the cart', () => {
+    const signedOut = { ...SIGNED_OUT_PRICING };
+    const choosing = { ...SIGNED_OUT_PRICING, signedIn: true, needsCompany: true };
+    const buying = { ...SIGNED_OUT_PRICING, signedIn: true, customerId: 'c2' };
+    for (const message of ['salesOrderCompanyGone', 'salesOrderCompanyUnavailable']) {
+      expect(companyGoneMessage(message, choosing)).toBe('salesOrderCompanyChooseAnother');
+      expect(companyGoneMessage(message, signedOut)).toBe('salesOrderCompanyUnavailable');
+      expect(companyGoneMessage(message, buying)).toBe(message);
     }
+  });
+
+  it('names the items that are no longer sold', () => {
+    const routeError = Object.assign(new Error('FetchError'), {
+      data: {
+        statusCode: 409,
+        data: { errorId: 'ORDER_PRODUCT_UNAVAILABLE', variantIds: ['v1', 'v2'] },
+      },
+    });
+    expect(salesOrderRefusal(routeError)).toEqual({
+      action: 'show',
+      message: 'salesOrderProductUnavailable',
+      variantIds: ['v1', 'v2'],
+    });
+    expect(
+      salesOrderRefusal(problem(409, 'ORDER_PRODUCT_UNAVAILABLE', { variantIds: ['v3', 7] }))
+    ).toEqual({ action: 'show', message: 'salesOrderProductUnavailable', variantIds: ['v3'] });
+  });
+
+  it('explicit messages for a missing order, an unregistered site and services down', () => {
+    expect(salesOrderRefusal(problem(404, 'SALES_ORDER_NOT_FOUND'))).toEqual({
+      action: 'show',
+      message: 'orderNotFound',
+    });
+    expect(salesOrderRefusal(problem(403, 'ORIGIN_NOT_REGISTERED'))).toEqual({
+      action: 'show',
+      message: 'salesOrderOriginNotRegistered',
+    });
+    expect(salesOrderRefusal(problem(503, 'SALES_ORDER_CART_UNAVAILABLE'))).toEqual({
+      action: 'retry',
+      message: 'salesOrderCartUnavailable',
+    });
+    expect(salesOrderRefusal(problem(503, 'SHOP_LOGIN_UNAVAILABLE'))).toEqual({
+      action: 'retry',
+      message: 'salesOrderLoginUnavailable',
+    });
+  });
+
+  it('a credit or blocked refusal re-runs the preview, so it decides what may be placed', () => {
+    expect(refreshesPreview(salesOrderRefusal(problem(409, 'CUSTOMER_BLOCKED')))).toBe(true);
+    expect(
+      refreshesPreview(salesOrderRefusal(problem(409, 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED')))
+    ).toBe(true);
+    expect(refreshesPreview(salesOrderRefusal(problem(502, 'SALES_ORDER_UPSTREAM_REFUSED')))).toBe(
+      false
+    );
   });
 
   it('a cart not bound to the company is re-bound by replaying its lines', () => {
@@ -348,7 +413,7 @@ describe('salesOrderRefusal', () => {
     });
     for (const error of [
       problem(502, 'SALES_ORDER_UPSTREAM_REFUSED'),
-      problem(503, 'SALES_ORDER_CART_UNAVAILABLE'),
+      problem(503),
       problem(500),
       problem(429),
       new Error('network'),
@@ -572,6 +637,10 @@ describe('messages', () => {
       'ORDER_IDEMPOTENCY_CONFLICT',
       'FEATURE_DISABLED',
       'SHOP_NO_MEMBERSHIP',
+      'SALES_ORDER_NOT_FOUND',
+      'ORIGIN_NOT_REGISTERED',
+      'SALES_ORDER_CART_UNAVAILABLE',
+      'SHOP_LOGIN_UNAVAILABLE',
     ];
     for (const id of ids) {
       const refusal = salesOrderRefusal(problem(409, id));
@@ -583,5 +652,59 @@ describe('messages', () => {
     }
     for (const status of SALES_ORDER_STATUSES) expect(en[salesStatusKey(status)]).toBeTruthy();
     expect(en.salesOrderLineInvalidNamed).toContain('{item}');
+    expect(en.salesOrderProductUnavailableNamed).toContain('{items}');
+    expect(en.salesOrderCompanyChooseAnother).toBeTruthy();
+  });
+});
+
+describe('the preview always matches the chosen location', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it('an older answer that arrives last is ignored, and loading lasts until both settle', async () => {
+    const seq = createPreviewSequence();
+    const a = deferred<string>();
+    const b = deferred<string>();
+    const first = latestAnswer(seq, () => a.promise);
+    const second = latestAnswer(seq, () => b.promise);
+    expect(seq.loading).toBe(true);
+
+    b.resolve('location B');
+    await expect(second).resolves.toEqual({ latest: true, value: 'location B' });
+    expect(seq.loading).toBe(true); // A is still out: Place order stays disabled
+
+    a.resolve('location A');
+    await expect(first).resolves.toEqual({ latest: false, value: 'location A' });
+    expect(seq.loading).toBe(false);
+  });
+
+  it('an older refusal that arrives last is ignored too', async () => {
+    const seq = createPreviewSequence();
+    const a = deferred<string>();
+    const first = latestAnswer(seq, () => a.promise);
+    const second = latestAnswer(seq, async () => 'B');
+    await expect(second).resolves.toEqual({ latest: true, value: 'B' });
+    a.reject(new Error('A refused'));
+    const settled = await first;
+    expect(settled.latest).toBe(false);
+    expect(settled.error).toBeInstanceOf(Error);
+  });
+
+  it('the latest refusal is reported as the latest', async () => {
+    const seq = createPreviewSequence();
+    const error = new Error('refused');
+    await expect(
+      latestAnswer(seq, async () => {
+        throw error;
+      })
+    ).resolves.toEqual({ latest: true, error });
+    expect(seq.loading).toBe(false);
   });
 });

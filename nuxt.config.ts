@@ -39,8 +39,13 @@ export default defineNuxtConfig({
     },
   },
 
-  // The account page renders a signed-in person's data: never let a cache keep it.
-  routeRules: { '/account': { headers: { 'cache-control': 'no-store' } } },
+  // The account pages and order on account render a signed-in person's data and their company's
+  // orders and prices: never let a cache keep them.
+  routeRules: {
+    '/account': { headers: { 'cache-control': 'private, no-store' } },
+    '/account/**': { headers: { 'cache-control': 'private, no-store' } },
+    '/checkout/account': { headers: { 'cache-control': 'private, no-store' } },
+  },
 
   i18n: {
     strategy: 'no_prefix',

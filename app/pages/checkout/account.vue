@@ -5,6 +5,10 @@ import {
   NOTE_MAX_LENGTH,
   PO_NUMBER_MAX_LENGTH,
   attemptFingerprint,
+  companyGoneMessage,
+  createPreviewSequence,
+  latestAnswer,
+  refreshesPreview,
   salesOrderRefusal,
   type CheckoutForm,
 } from '~~/shared/utils/sales-orders';
@@ -40,7 +44,9 @@ const locations = ref<EldraCustomerLocation[]>([]);
 const preview = ref<EldraSalesOrderPreview | null>(null);
 const placed = ref<EldraSalesOrder | null>(null);
 const ready = ref(false);
+/** True while any preview is on its way, so Place order and the location wait for it. */
 const previewing = ref(false);
+const previews = createPreviewSequence();
 const placing = ref(false);
 /** The message (and what it is about) of the last refusal. */
 const problem = ref<{ message: string; action: string } | null>(null);
@@ -49,9 +55,15 @@ const cartLines = computed(() => cartStore.cart?.items ?? []);
 
 function messageFor(refusal: ReturnType<typeof salesOrderRefusal>): string {
   if (refusal.action === 'open-order') return '';
+  const titleOf = (variantId: string) =>
+    cartLines.value.find((line) => line.variantId === variantId)?.title;
   if (refusal.message === 'salesOrderLineInvalid' && refusal.variantId) {
-    const item = cartLines.value.find((line) => line.variantId === refusal.variantId)?.title;
+    const item = titleOf(refusal.variantId);
     if (item) return t('salesOrderLineInvalidNamed', { item });
+  }
+  if (refusal.message === 'salesOrderProductUnavailable' && refusal.variantIds?.length) {
+    const items = refusal.variantIds.map(titleOf).filter(Boolean);
+    if (items.length) return t('salesOrderProductUnavailableNamed', { items: items.join(', ') });
   }
   return t(refusal.message);
 }
@@ -79,6 +91,12 @@ async function handleRefusal(error: unknown) {
     // (a guest cart at list prices, or it waits for the person to choose a company).
     preview.value = null;
     await salesOrders.refreshPricing();
+    // Now that who is buying is known again, say what happened: choose another company, or
+    // the cart is at list prices.
+    problem.value = {
+      message: t(companyGoneMessage(refusal.message, pricing.value)),
+      action: refusal.action,
+    };
     await cartStore.loadCart();
   } else if (refusal.action === 'sign-in') {
     preview.value = null;
@@ -89,6 +107,10 @@ async function handleRefusal(error: unknown) {
   } else if (refusal.action === 'reload-locations') {
     await loadLocations().catch(() => undefined);
     await runPreview(false);
+  } else if (refreshesPreview(refusal)) {
+    // A credit or blocked refusal: the preview's wouldBlock (or its own refusal) now decides
+    // whether placing is offered, rather than leaving the button on for a retry that cannot pass.
+    await runPreview(false);
   }
 }
 
@@ -97,19 +119,23 @@ async function runPreview(clear = true) {
     preview.value = null;
     return;
   }
-  previewing.value = true;
   if (clear) problem.value = null;
-  try {
-    preview.value = await salesOrders.preview({
-      cartId: cartStore.cartId,
-      ...(form.locationId ? { locationId: form.locationId } : {}),
-    });
-  } catch (error) {
+  const input = {
+    cartId: cartStore.cartId,
+    ...(form.locationId ? { locationId: form.locationId } : {}),
+  };
+  const answer = latestAnswer(previews, () => salesOrders.preview(input));
+  previewing.value = previews.loading;
+  const settled = await answer;
+  previewing.value = previews.loading;
+  // An older preview (another location) answering late is dropped, answer and refusal alike.
+  if (!settled.latest) return;
+  if ('error' in settled) {
     preview.value = null;
-    await handleRefusal(error);
-  } finally {
-    previewing.value = false;
+    await handleRefusal(settled.error);
+    return;
   }
+  preview.value = settled.value ?? null;
 }
 
 const credit = computed(() => preview.value?.credit);
@@ -277,6 +303,7 @@ useSeoMeta({ title: () => t('orderOnAccount'), robots: 'noindex, nofollow' });
               id="so-location"
               v-model="form.locationId"
               :class="input"
+              :disabled="previewing || placing"
               data-testid="sales-order-location"
             >
               <option v-for="location in locations" :key="location.id" :value="location.id">

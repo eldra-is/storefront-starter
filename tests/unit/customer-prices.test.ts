@@ -469,6 +469,15 @@ describe('routeErrorOf', () => {
     });
   });
 
+  it('passes the variant ids of ORDER_PRODUCT_UNAVAILABLE, strings only', () => {
+    const gone = new EldraHttpError(new Response(null, { status: 409 }), {
+      code: 'CONFLICT',
+      errorId: 'ORDER_PRODUCT_UNAVAILABLE',
+      errors: { variantIds: ['v1', 5, 'v2'] },
+    });
+    expect(routeErrorOf(gone).data.variantIds).toEqual(['v1', 'v2']);
+  });
+
   it('answers 502 for anything without a status', () => {
     expect(routeErrorOf(new Error('secret detail'))).toEqual({ statusCode: 502, data: {} });
   });

@@ -208,9 +208,15 @@ export interface RouteError {
   /**
    * The reason, plus the only problem details a page acts on: the order a cart already became
    * (`SALES_ORDER_CART_ALREADY_ORDERED`) and the line that cannot be ordered
-   * (`SALES_ORDER_LINE_INVALID`). Nothing else from `errors` is passed on (no credit figures).
+   * (`SALES_ORDER_LINE_INVALID`) or the items no longer sold (`ORDER_PRODUCT_UNAVAILABLE`). Nothing else from `errors` is passed on (no credit figures).
    */
-  data: { errorId?: string; code?: string; salesOrderId?: string; variantId?: string };
+  data: {
+    errorId?: string;
+    code?: string;
+    salesOrderId?: string;
+    variantId?: string;
+    variantIds?: string[];
+  };
 }
 
 export function routeErrorOf(error: unknown): RouteError {
@@ -218,7 +224,7 @@ export function routeErrorOf(error: unknown): RouteError {
     status?: unknown;
     errorId?: unknown;
     code?: unknown;
-    errors?: { salesOrderId?: unknown; variantId?: unknown } | null;
+    errors?: { salesOrderId?: unknown; variantId?: unknown; variantIds?: unknown } | null;
   };
   const statusCode = typeof status === 'number' && status >= 400 && status < 600 ? status : 502;
   const data: RouteError['data'] = {};
@@ -226,6 +232,9 @@ export function routeErrorOf(error: unknown): RouteError {
   if (typeof code === 'string') data.code = code;
   if (typeof errors?.salesOrderId === 'string') data.salesOrderId = errors.salesOrderId;
   if (typeof errors?.variantId === 'string') data.variantId = errors.variantId;
+  if (Array.isArray(errors?.variantIds)) {
+    data.variantIds = errors.variantIds.filter((id): id is string => typeof id === 'string');
+  }
   return { statusCode, data };
 }
 

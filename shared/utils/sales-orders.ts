@@ -13,6 +13,7 @@ import {
   PRICED_RESPONSE_HEADERS,
   companiesFor,
   pricedFailure,
+  type CustomerPricingState,
   type PricedCaller,
 } from './customer-prices';
 
@@ -196,6 +197,7 @@ function problemOf(error: unknown): {
   errorId?: string;
   salesOrderId?: unknown;
   variantId?: unknown;
+  variantIds?: unknown;
 } {
   if (error instanceof EldraHttpError) {
     const errors = (error.errors ?? {}) as Record<string, unknown>;
@@ -204,6 +206,7 @@ function problemOf(error: unknown): {
       errorId: error.errorId ?? error.code,
       salesOrderId: errors.salesOrderId,
       variantId: errors.variantId,
+      variantIds: errors.variantIds,
     };
   }
   if (!error || typeof error !== 'object') return {};
@@ -222,6 +225,7 @@ function problemOf(error: unknown): {
     errorId: typeof id === 'string' ? id : undefined,
     salesOrderId: body.salesOrderId,
     variantId: body.variantId,
+    variantIds: body.variantIds,
   };
 }
 
@@ -259,18 +263,23 @@ export type SalesOrderRefusal =
       message: string;
       /** SALES_ORDER_LINE_INVALID: the cart line that cannot be ordered. */
       variantId?: string;
+      /** ORDER_PRODUCT_UNAVAILABLE: the cart lines no longer sold. */
+      variantIds?: string[];
     };
 
 export function salesOrderRefusal(error: unknown): SalesOrderRefusal {
-  const { status, errorId, variantId } = problemOf(error);
+  const { status, errorId, variantId, variantIds } = problemOf(error);
   switch (errorId) {
     case 'CUSTOMER_BLOCKED':
       return { action: 'show', message: 'salesOrderBlocked' };
     case 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED':
       return { action: 'show', message: 'salesOrderCreditLimit' };
     case 'ORDER_CUSTOMER_PRICES_OFF':
-    case 'ORDER_CUSTOMER_UNAVAILABLE':
       return { action: 'to-guest', message: 'salesOrderCompanyUnavailable' };
+    case 'ORDER_CUSTOMER_UNAVAILABLE':
+      // Neutral until who is buying is read again (companyGoneMessage): the session may have
+      // ended (list prices) or only this company was dropped (choose another).
+      return { action: 'to-guest', message: 'salesOrderCompanyGone' };
     case 'SALES_ORDER_CART_NOT_BOUND':
       return { action: 'rebind', message: 'salesOrderCartRebound' };
     case 'SALES_ORDER_CART_ALREADY_ORDERED': {
@@ -285,8 +294,22 @@ export function salesOrderRefusal(error: unknown): SalesOrderRefusal {
       return typeof variantId === 'string' && variantId
         ? { action: 'show', message: 'salesOrderLineInvalid', variantId }
         : { action: 'show', message: 'salesOrderLineInvalid' };
-    case 'ORDER_PRODUCT_UNAVAILABLE':
-      return { action: 'show', message: 'salesOrderProductUnavailable' };
+    case 'ORDER_PRODUCT_UNAVAILABLE': {
+      const ids = Array.isArray(variantIds)
+        ? variantIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : [];
+      return ids.length
+        ? { action: 'show', message: 'salesOrderProductUnavailable', variantIds: ids }
+        : { action: 'show', message: 'salesOrderProductUnavailable' };
+    }
+    case 'SALES_ORDER_NOT_FOUND':
+      return { action: 'show', message: 'orderNotFound' };
+    case 'ORIGIN_NOT_REGISTERED':
+      return { action: 'show', message: 'salesOrderOriginNotRegistered' };
+    case 'SALES_ORDER_CART_UNAVAILABLE':
+      return { action: 'retry', message: 'salesOrderCartUnavailable' };
+    case 'SHOP_LOGIN_UNAVAILABLE':
+      return { action: 'retry', message: 'salesOrderLoginUnavailable' };
     case 'SALES_ORDER_CART_EMPTY':
     case 'CART_NOT_FOUND':
       return { action: 'show', message: 'emptyCart' };
@@ -309,6 +332,73 @@ export function salesOrderRefusal(error: unknown): SalesOrderRefusal {
   if (status === 401) return { action: 'sign-in', message: 'salesOrderSignIn' };
   if (mayHavePlaced(status)) return { action: 'retry', message: 'salesOrderRetry' };
   return { action: 'show', message: 'salesOrderFailed' };
+}
+
+/**
+ * The message after a company refusal (`to-guest`), once who is buying has been read again: the
+ * person still signed in but choosing (only this company was dropped) is asked to choose another;
+ * a person now signed out buys at list prices; otherwise the refusal's own message stands.
+ */
+export function companyGoneMessage(message: string, pricing: CustomerPricingState): string {
+  if (pricing.signedIn && pricing.needsCompany) return 'salesOrderCompanyChooseAnother';
+  if (!pricing.signedIn) return 'salesOrderCompanyUnavailable';
+  return message;
+}
+
+/**
+ * Whether a refused create should be followed by a fresh preview: after a credit or blocked
+ * refusal the preview's `credit.wouldBlock` (or its own refusal) then decides whether placing is
+ * offered, instead of leaving the button on for a retry that cannot pass.
+ */
+export function refreshesPreview(refusal: SalesOrderRefusal): boolean {
+  return (
+    refusal.action === 'show' &&
+    (refusal.message === 'salesOrderCreditLimit' || refusal.message === 'salesOrderBlocked')
+  );
+}
+
+/**
+ * Previews asked one after another (the location changed meanwhile) can answer out of order. Each
+ * call gets a number; only the answer of the latest counts, and `loading` stays true until every
+ * call has settled, so Place order is never enabled beside a preview still on its way.
+ */
+export interface PreviewSequence {
+  start(): number;
+  settle(token: number): boolean;
+  readonly loading: boolean;
+}
+
+export function createPreviewSequence(): PreviewSequence {
+  let latest = 0;
+  let inFlight = 0;
+  return {
+    start() {
+      inFlight += 1;
+      latest += 1;
+      return latest;
+    },
+    settle(token) {
+      inFlight = Math.max(0, inFlight - 1);
+      return token === latest;
+    },
+    get loading() {
+      return inFlight > 0;
+    },
+  };
+}
+
+/** Runs one preview through the sequence; `latest` says whether its answer (or refusal) counts. */
+export async function latestAnswer<T>(
+  sequence: PreviewSequence,
+  call: () => Promise<T>
+): Promise<{ latest: boolean; value?: T; error?: unknown }> {
+  const token = sequence.start();
+  try {
+    const value = await call();
+    return { latest: sequence.settle(token), value };
+  } catch (error) {
+    return { latest: sequence.settle(token), error };
+  }
 }
 
 /** No answer, a 5xx or a rate limit: an order may have been placed (or nothing was done). */

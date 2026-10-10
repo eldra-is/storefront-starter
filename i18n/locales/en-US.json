@@ -133,5 +133,11 @@
   "salesStatusOnHold": "On hold",
   "salesStatusPartDelivered": "Partly delivered",
   "salesStatusDelivered": "Delivered",
-  "salesStatusCancelled": "Cancelled"
+  "salesStatusCancelled": "Cancelled",
+  "salesOrderCompanyGone": "The company you were buying for can no longer order here.",
+  "salesOrderCompanyChooseAnother": "The company you were buying for is no longer available. Choose another company on your account page.",
+  "salesOrderProductUnavailableNamed": "No longer sold: {items}. Remove them from your cart and try again.",
+  "salesOrderOriginNotRegistered": "This site is not set up to place orders on account. Please contact us.",
+  "salesOrderCartUnavailable": "Your cart could not be read just now. Please try again shortly.",
+  "salesOrderLoginUnavailable": "Your sign-in could not be checked just now. Please try again shortly."
 }
