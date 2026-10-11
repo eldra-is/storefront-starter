@@ -274,6 +274,9 @@ export function salesOrderRefusal(error: unknown): SalesOrderRefusal {
       return { action: 'show', message: 'salesOrderBlocked' };
     case 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED':
       return { action: 'show', message: 'salesOrderCreditLimit' };
+    case 'SALES_ORDER_CREDIT_CURRENCY_MISMATCH':
+      // BLOCK mode with the credit kept in another currency: refused, and no figures are named.
+      return { action: 'show', message: 'salesOrderCreditCurrencyMismatch' };
     case 'ORDER_CUSTOMER_PRICES_OFF':
       return { action: 'to-guest', message: 'salesOrderCompanyUnavailable' };
     case 'ORDER_CUSTOMER_UNAVAILABLE':
@@ -359,7 +362,9 @@ export function refreshesPreview(
   return (
     from === 'create' &&
     refusal.action === 'show' &&
-    (refusal.message === 'salesOrderCreditLimit' || refusal.message === 'salesOrderBlocked')
+    (refusal.message === 'salesOrderCreditLimit' ||
+      refusal.message === 'salesOrderCreditCurrencyMismatch' ||
+      refusal.message === 'salesOrderBlocked')
   );
 }
 

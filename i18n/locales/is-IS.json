@@ -139,5 +139,6 @@
   "salesOrderProductUnavailableNamed": "Ekki lengur til sölu: {items}. Fjarlægðu þær úr körfunni og reyndu aftur.",
   "salesOrderOriginNotRegistered": "Þessi vefur er ekki settur upp til að taka við pöntunum í reikning. Hafðu samband við okkur.",
   "salesOrderCartUnavailable": "Ekki tókst að sækja körfuna í augnablikinu. Reyndu aftur eftir smástund.",
-  "salesOrderLoginUnavailable": "Ekki tókst að staðfesta innskráninguna í augnablikinu. Reyndu aftur eftir smástund."
+  "salesOrderLoginUnavailable": "Ekki tókst að staðfesta innskráninguna í augnablikinu. Reyndu aftur eftir smástund.",
+  "salesOrderCreditCurrencyMismatch": "Lánsheimild fyrirtækisins hjá okkur er í annarri mynt, svo ekki er hægt að panta þetta í reikning. Hafðu samband við okkur."
 }

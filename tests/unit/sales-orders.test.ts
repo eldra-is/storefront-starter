@@ -394,6 +394,15 @@ describe('salesOrderRefusal', () => {
     }
   });
 
+  it('credit kept in another currency is its own message, with no figures, and re-previews once', () => {
+    const refusal = salesOrderRefusal(
+      problem(409, 'SALES_ORDER_CREDIT_CURRENCY_MISMATCH', { limit: 1, currency: 'EUR' })
+    );
+    expect(refusal).toEqual({ action: 'show', message: 'salesOrderCreditCurrencyMismatch' });
+    expect(refreshesPreview(refusal, 'create')).toBe(true);
+    expect(refreshesPreview(refusal, 'preview')).toBe(false);
+  });
+
   it('a cart not bound to the company is re-bound by replaying its lines', () => {
     expect(salesOrderRefusal(problem(409, 'SALES_ORDER_CART_NOT_BOUND'))).toEqual({
       action: 'rebind',
@@ -654,6 +663,7 @@ describe('messages', () => {
       'ORIGIN_NOT_REGISTERED',
       'SALES_ORDER_CART_UNAVAILABLE',
       'SHOP_LOGIN_UNAVAILABLE',
+      'SALES_ORDER_CREDIT_CURRENCY_MISMATCH',
     ];
     for (const id of ids) {
       const refusal = salesOrderRefusal(problem(409, id));

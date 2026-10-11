@@ -1,5 +1,9 @@
 import { isError, type H3Event } from 'h3';
-import type { EldraCustomerMe, EldraRequestContext } from '@eldrajs/sdk';
+import {
+  EldraIdempotencyKeyError,
+  type EldraCustomerMe,
+  type EldraRequestContext,
+} from '@eldrajs/sdk';
 import { dropOrganizationCache } from '~~/app/utils/organization';
 import {
   isSameOriginRequest,
@@ -289,6 +293,11 @@ export async function businessCall<T>(
   } catch (error) {
     // This site's own refusals (an outage refreshing the token, /me) already carry their status.
     if (isError(error)) throw error;
+    // The SDK refused the key before sending anything (the route checks it first, so this is a
+    // bug here, never a retry and never a lost connection, which is a plain TypeError).
+    if (error instanceof EldraIdempotencyKeyError) {
+      throw createError({ statusCode: 400, statusMessage: 'Bad request' });
+    }
     const { statusCode, data } = routeErrorOf(error);
     throw createError({ statusCode, data });
   }
