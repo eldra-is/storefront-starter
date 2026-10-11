@@ -391,6 +391,11 @@ export function queryString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
 }
 
+/** The gateway's product list filters by a list of categories: one category, or none. */
+export function categoryList(categoryId: string | undefined): string[] | undefined {
+  return categoryId ? [categoryId] : undefined;
+}
+
 /** Catalog lists are not paginated yet: at most 100 (README, Known limits). */
 export const MAX_PAGE_SIZE = 100;
 

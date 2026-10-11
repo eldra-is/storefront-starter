@@ -1,4 +1,4 @@
-import { pageSizeOf, queryString } from '~~/shared/utils/customer-prices';
+import { categoryList, pageSizeOf, queryString } from '~~/shared/utils/customer-prices';
 
 /** Products, priced for the signed-in business customer's company (list prices for a guest). Never cached. */
 export default defineEventHandler((event) => {
@@ -7,7 +7,7 @@ export default defineEventHandler((event) => {
     eldra.catalog.listProducts(
       {
         locale: queryString(query.locale),
-        categoryId: queryString(query.categoryId),
+        categoryId: categoryList(queryString(query.categoryId)),
         pageSize: pageSizeOf(query.pageSize),
       },
       context

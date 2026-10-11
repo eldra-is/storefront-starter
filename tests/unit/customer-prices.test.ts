@@ -17,6 +17,7 @@ import {
   isPermanentLineRefusal,
   UNKNOWN_COMPANY,
   catalogKey,
+  categoryList,
   chosenCompany,
   pageSizeOf,
   pricedContext,
@@ -744,5 +745,13 @@ describe('isPermanentLineRefusal (a cart move leaves a line behind only for thes
     expect(isPermanentLineRefusal(409, 'CART_CUSTOMER_UNAVAILABLE')).toBe(false);
     expect(isPermanentLineRefusal(409, 'SHOP_CUSTOMER_REQUIRED')).toBe(false);
     expect(isPermanentLineRefusal(400, 'BAD_REQUEST')).toBe(false);
+  });
+});
+
+describe('categoryList', () => {
+  it('sends one category as a list, and none as nothing', () => {
+    expect(categoryList('c1')).toEqual(['c1']);
+    expect(categoryList(undefined)).toBeUndefined();
+    expect(categoryList('')).toBeUndefined();
   });
 });

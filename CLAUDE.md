@@ -40,7 +40,7 @@ Two composition models: flat, repeatable section schemas for the home page, and 
 
 - The cart id lives in `localStorage` under `storefront-starter.cartId` through the SDK's `createCartSession`; cart state skips hydration and cart markup renders inside `<ClientOnly>`.
 - A forgotten cart (`CART_NOT_FOUND`) is dropped and the add retried once; `CART_INSUFFICIENT_STOCK` shows as out of stock.
-- Checkout is a hand-off: `client.checkout.handoffUrl`; the storefront ends there. `/cart?recovery=<token>` restores an abandoned basket (restored, partial or expired).
+- Checkout is a hand-off: `await client.checkout.url({ cartId, locale })`, built from the platform's published configuration (async; a refusal means no checkout link, never a guessed one); the storefront ends there. `/cart?recovery=<token>` restores an abandoned basket (restored, partial or expired).
 - Totals come from the server; never sum lines.
 - Prices: `usePrice()` → `formatPrice(amount, currency, locale)` with `Intl.NumberFormat` and the locale passed explicitly.
 - Links that differ only by query (`/shop?category=…`) bind `aria-current` explicitly.

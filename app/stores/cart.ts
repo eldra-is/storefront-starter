@@ -1,5 +1,5 @@
 import { defineStore, skipHydrate } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { createCartSession } from '@eldrajs/sdk';
 import type { EldraAddCartItemInput, EldraCart } from '@eldrajs/sdk';
 import {
@@ -64,17 +64,40 @@ export const useCartStore = defineStore('cart', () => {
     () => cart.value?.items?.reduce((sum, item) => sum + item.quantity, 0) ?? 0
   );
   const action = computed(() => cartBindingAction(boundTo.value, pricing.value, count.value > 0));
-  // handoffUrl throws when a non-production gateway has no checkout origin configured. No checkout
-  // while the cart is being moved, could not be moved, or is not this buyer's.
-  const checkoutUrl = computed(() => {
+  /**
+   * The cart this buyer may check out now, as a key (`cartId|locale`), else null: no checkout while
+   * the cart is being moved, could not be moved, or is not this buyer's. A key, not an object, so a
+   * quantity change does not ask for the link again.
+   */
+  const checkoutTarget = computed(() => {
     if (!cartId.value || !cart.value || moving.value || moveFailed.value) return null;
     if (action.value !== 'keep') return null;
-    try {
-      return eldra.checkout.handoffUrl({ cartId: cartId.value, locale: locale.value });
-    } catch {
-      return null;
-    }
+    return `${cartId.value}|${locale.value}`;
   });
+  /**
+   * The hosted checkout link. The SDK builds it from the platform's published configuration, so it
+   * arrives asynchronously; until it does, or when it cannot be built (no checkout URL published,
+   * the read failed), there is no link, exactly as before when building it threw. A link answered
+   * for an earlier cart is never shown.
+   */
+  const checkoutUrl = ref<string | null>(null);
+  let checkoutRequest = 0;
+  watch(
+    checkoutTarget,
+    async (target) => {
+      const request = ++checkoutRequest;
+      checkoutUrl.value = null;
+      if (!target || !cartId.value) return;
+      let url: string | null = null;
+      try {
+        url = await eldra.checkout.url({ cartId: cartId.value, locale: locale.value });
+      } catch {
+        url = null;
+      }
+      if (request === checkoutRequest) checkoutUrl.value = url;
+    },
+    { immediate: true }
+  );
 
   /**
    * Order on account (/checkout/account) is offered for a company cart with lines that is bound to

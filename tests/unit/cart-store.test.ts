@@ -1,7 +1,7 @@
 import { EldraHttpError } from '@eldrajs/sdk';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
+import { nextTick, ref } from 'vue';
 import { errorIdOf, isCartGone, isNotFound, statusOf } from '../../app/utils/errors';
 import { SIGNED_OUT_PRICING, type CustomerPricingState } from '../../shared/utils/customer-prices';
 
@@ -48,12 +48,19 @@ let serverFetch: ReturnType<typeof vi.fn>;
 let pricedFor: () => string;
 let eldra: {
   cart: Record<string, ReturnType<typeof vi.fn>>;
-  checkout: { handoffUrl: (o: { cartId: string }) => string };
+  checkout: { url: ReturnType<typeof vi.fn> };
   orders: Record<string, ReturnType<typeof vi.fn>>;
 };
 
 function signedInAs(customerId: string, customerName = customerId): CustomerPricingState {
   return { ...SIGNED_OUT_PRICING, signedIn: true, customerId, customerName };
+}
+
+/** The checkout link once the store has asked for it (the SDK builds it asynchronously). */
+async function checkoutLink(cart: { checkoutUrl: string | null }): Promise<string | null> {
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return cart.checkoutUrl;
 }
 
 async function store() {
@@ -83,7 +90,9 @@ beforeEach(() => {
       applyDiscount: vi.fn(),
       removeDiscount: vi.fn(),
     },
-    checkout: { handoffUrl: ({ cartId }) => `https://checkout.example/${cartId}` },
+    checkout: {
+      url: vi.fn(async ({ cartId }: { cartId: string }) => `https://checkout.example/${cartId}`),
+    },
     orders: {},
   };
   vi.stubGlobal('localStorage', storage);
@@ -123,7 +132,7 @@ describe('cart store: a cart priced for someone else is never shown', () => {
     carts.new = cartOf('new', [line('n1', 'v1', 2)]);
 
     const cart = await store();
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
     await cart.loadCart();
 
     expect(serverFetch.mock.calls[0]).toEqual([
@@ -137,7 +146,7 @@ describe('cart store: a cart priced for someone else is never shown', () => {
     expect(storage.getItem(BOUND_KEY)).toBe('b');
     expect(cart.cart?.id).toBe('new');
     expect(cart.notice).toEqual({ reason: 'company', companyName: 'Beta hf.', missing: 1 });
-    expect(cart.checkoutUrl).toBe('https://checkout.example/new');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/new');
   });
 
   it('keeps the old cart (nothing lost) when no line can be moved, with no checkout', async () => {
@@ -154,7 +163,7 @@ describe('cart store: a cart priced for someone else is never shown', () => {
     expect(storage.getItem(BOUND_KEY)).toBe('a');
     expect(cart.cart).toBeNull();
     expect(cart.lastError).toBe('CART_MOVE_FAILED');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
   });
 
   it('moves a company cart to a guest cart once the browser is signed out', async () => {
@@ -176,7 +185,7 @@ describe('cart store: a cart priced for someone else is never shown', () => {
     expect(cart.cartId).toBe('g1');
     expect(storage.getItem(BOUND_KEY)).toBeNull();
     expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
-    expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/g1');
   });
 
   it('says nothing when there was nothing to move', async () => {
@@ -204,7 +213,7 @@ describe('cart store: a cart priced for someone else is never shown', () => {
 
     expect(cart.cart).toBeNull();
     expect(cart.lastError).toBe('CART_WAIT');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
     expect(cart.cartId).toBe('old');
     expect(storage.getItem(BOUND_KEY)).toBe('a');
     expect(serverFetch).not.toHaveBeenCalled();
@@ -392,15 +401,15 @@ describe('cart store: the binding comes from the server', () => {
     pricing.value = signedInAs('b');
     const cart = await store();
     await cart.loadCart();
-    expect(cart.checkoutUrl).toBe('https://checkout.example/old');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/old');
 
     serverFetch.mockRejectedValue(routeError(409, 'CART_CUSTOMER_MISMATCH'));
     await expect(cart.addItem('p-v2', 'v2', 1)).rejects.toBeTruthy();
     expect(cart.cartId).toBe('old');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
 
     await cart.loadCart();
-    expect(cart.checkoutUrl).toBe('https://checkout.example/old');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/old');
   });
 });
 
@@ -419,7 +428,7 @@ describe('cart store: round 3', () => {
     expect(storage.getItem(CART_KEY)).toBe('old');
     expect(storage.getItem(BOUND_KEY)).toBe('b');
     expect(cart.moveFailed).toBe(true);
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
   });
 
   it('a company move the server ran as a guest is told as a move to a guest cart', async () => {
@@ -477,7 +486,7 @@ describe('cart store: a write never unbinds a company cart (P3-R7)', () => {
     pricing.value = signedInAs('b');
     const cart = await store();
     await cart.loadCart();
-    expect(cart.checkoutUrl).toBe('https://checkout.example/old');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/old');
 
     // The session ended server-side; the removal ran as a guest and succeeded (the line is gone).
     pricedFor = () => 'guest';
@@ -500,7 +509,7 @@ describe('cart store: a write never unbinds a company cart (P3-R7)', () => {
     expect(cart.cartId).toBe('g1');
     expect(cart.boundTo).toBeNull();
     expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
-    expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/g1');
   });
 
   it('when that move cannot be made, the cart stays company-bound: no checkout, no code entry', async () => {
@@ -519,7 +528,7 @@ describe('cart store: a write never unbinds a company cart (P3-R7)', () => {
     expect(cart.cartId).toBe('old');
     expect(cart.boundTo).toBe('b');
     expect(storage.getItem(BOUND_KEY)).toBe('b');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
     expect(cart.discountAllowed).toBe(false);
   });
 
@@ -538,7 +547,7 @@ describe('cart store: a write never unbinds a company cart (P3-R7)', () => {
     await cart.removeItem('i2');
     expect(eldra.cart.removeItem).toHaveBeenCalledWith('old', 'i2');
     expect(storage.getItem(BOUND_KEY)).toBe('b');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
   });
 });
 
@@ -562,7 +571,7 @@ describe('cart store: a move never loses lines to a failure that may pass', () =
     expect(cart.moveFailed).toBe(true);
     expect(cart.lastError).toBe('CART_MOVE_FAILED');
     expect(cart.notice).toBeNull();
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
   });
 
   it('a rate limit or a network failure abandons the move the same way', async () => {
@@ -638,7 +647,7 @@ describe('cart store: business login switched off (P3-R8)', () => {
     expect(cart.cartId).toBe('g1');
     expect(cart.boundTo).toBeNull();
     expect(cart.notice).toEqual({ reason: 'guest', companyName: null, missing: 0 });
-    expect(cart.checkoutUrl).toBe('https://checkout.example/g1');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/g1');
   });
 
   it('CART_CUSTOMER_UNAVAILABLE from a cart route moves the basket to a guest cart', async () => {
@@ -703,7 +712,7 @@ describe('cart store: the company is the one the server named (S-M1)', () => {
     await cart.addItem('p-v1', 'v1', 1);
     expect(cart.boundTo).toBe('customer');
     expect(cart.discountAllowed).toBe(false);
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
 
     cart.forgetCompanyCart();
     expect(storage.getItem(CART_KEY)).toBeNull();
@@ -718,7 +727,7 @@ describe('cart store: the company is the one the server named (S-M1)', () => {
     await cart.addItem('p-v1', 'v1', 1);
     expect(cart.boundTo).toBe('c2');
     expect(pricing.value.customerId).toBe('c2');
-    expect(cart.checkoutUrl).toBe('https://checkout.example/new');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/new');
   });
 });
 
@@ -739,7 +748,7 @@ describe('cart store: another tab (S-M6)', () => {
 
     expect(cart.cartId).toBe('new');
     expect(cart.cart?.id).toBe('new');
-    expect(cart.checkoutUrl).toBe('https://checkout.example/new');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/new');
   });
 });
 
@@ -802,6 +811,50 @@ describe('cart store: order on account (B2B phase 5)', () => {
     expect(pricing.value).toMatchObject({ signedIn: true, customerId: null, needsCompany: true });
     expect(cart.lastError).toBe('COMPANY_REQUIRED');
     expect(cart.cartId).toBe('c');
-    expect(cart.checkoutUrl).toBeNull();
+    expect(await checkoutLink(cart)).toBeNull();
+  });
+});
+
+describe('cart store: the checkout link', () => {
+  it('is not offered when the platform has no checkout URL (the SDK refuses)', async () => {
+    storage.setItem(CART_KEY, 'g');
+    carts.g = cartOf('g', [line('i1', 'v1')]);
+    eldra.checkout.url.mockRejectedValue(new Error('The platform did not publish a checkout URL'));
+    const cart = await store();
+    await cart.loadCart();
+    expect(await checkoutLink(cart)).toBeNull();
+  });
+
+  it('a link answered for an earlier cart is never shown', async () => {
+    storage.setItem(CART_KEY, 'a');
+    carts.a = cartOf('a', [line('i1', 'v1')]);
+    carts.b = cartOf('b', [line('i2', 'v2')]);
+    let releaseA!: (url: string) => void;
+    eldra.checkout.url
+      .mockImplementationOnce(() => new Promise<string>((resolve) => (releaseA = resolve)))
+      .mockImplementation(
+        async ({ cartId }: { cartId: string }) => `https://checkout.example/${cartId}`
+      );
+    const cart = await store();
+    await cart.loadCart();
+    await nextTick();
+    // Another tab replaced the cart before the first link came back.
+    storage.setItem(CART_KEY, 'b');
+    for (const listener of storageListeners) listener({ key: CART_KEY });
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/b');
+    releaseA('https://checkout.example/a');
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/b');
+  });
+
+  it('a quantity change does not ask for the link again', async () => {
+    storage.setItem(CART_KEY, 'g');
+    carts.g = cartOf('g', [line('i1', 'v1')]);
+    const cart = await store();
+    await cart.loadCart();
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/g');
+    carts.g = cartOf('g', [line('i1', 'v1', 3)]);
+    await cart.loadCart();
+    expect(await checkoutLink(cart)).toBe('https://checkout.example/g');
+    expect(eldra.checkout.url).toHaveBeenCalledTimes(1);
   });
 });

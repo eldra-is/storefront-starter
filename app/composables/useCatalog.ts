@@ -1,6 +1,6 @@
 import type { EldraProductDetails, EldraProductList } from '@eldrajs/sdk';
 import type { Category, Collection, ProductDetail, ProductListItem } from '~/types/catalog';
-import { MAX_PAGE_SIZE, catalogKey } from '~~/shared/utils/customer-prices';
+import { MAX_PAGE_SIZE, catalogKey, categoryList } from '~~/shared/utils/customer-prices';
 
 /**
  * Catalog reads through the SDK, normalised once so pages never see a null list. An organization
@@ -28,9 +28,10 @@ export function useCatalog() {
   ): Promise<ProductListItem[]> {
     if (!enabled()) return [];
     const query = { locale: locale.value, categoryId, pageSize: Math.min(pageSize, MAX_PAGE_SIZE) };
+    // The gateway takes a list of categories; this site's own route takes the one category.
     const res = priced()
       ? await serverFetch<EldraProductList>('/api/catalog/products', { query })
-      : await eldra.catalog.listProducts(query);
+      : await eldra.catalog.listProducts({ ...query, categoryId: categoryList(categoryId) });
     return res?.data ?? [];
   }
 

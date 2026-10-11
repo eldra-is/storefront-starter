@@ -25,7 +25,7 @@ In Studio, General settings, add `http://localhost:3000` under **Storefront orig
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `ELDRA_ORG_ID`                         | organization id or alias, required                                                                    |
 | `BASE_API_URL`                         | gateway origin; empty means production (`https://web.eldra.app/api`); `/api` is appended when missing |
-| `NUXT_PUBLIC_CHECKOUT_URL`             | hosted checkout origin; empty means production; set it whenever `BASE_API_URL` is set                 |
+| `NUXT_PUBLIC_CHECKOUT_URL`             | no longer used: the SDK reads the hosted checkout address from the platform the gateway serves        |
 | `NUXT_PUBLIC_DEFAULT_LOCATION_ID`      | inventory location for stock badges; empty means no badges                                            |
 | `PREVIEW_TOKEN`                        | server-only; when set, server-side reads include drafts — see [Previewing drafts](#previewing-drafts) |
 | `NUXT_SITE_URL`, `NUXT_SITE_INDEXABLE` | canonical URL; whether search engines may index the site                                              |
