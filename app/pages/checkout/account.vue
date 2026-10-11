@@ -76,8 +76,13 @@ async function loadLocations() {
   }
 }
 
-/** Acts on a refused preview or create (see `salesOrderRefusal`). */
-async function handleRefusal(error: unknown) {
+/**
+ * Acts on a refused preview or create (see `salesOrderRefusal`). A follow-up preview (after a
+ * re-bind, a location reload, or a credit or blocked refusal of a create) is asked at most once:
+ * the preview it runs passes `followUp = false`, so a refusal that keeps coming back (a blocked
+ * customer) is shown, never asked again in a loop.
+ */
+async function handleRefusal(error: unknown, from: 'create' | 'preview', followUp = true) {
   const refusal = salesOrderRefusal(error);
   if (refusal.action === 'open-order') {
     // The cart already became that order: it is gone, so the basket starts afresh.
@@ -103,18 +108,18 @@ async function handleRefusal(error: unknown) {
     pricing.value = { ...pricing.value, signedIn: false };
   } else if (refusal.action === 'rebind') {
     preview.value = null;
-    if (await cartStore.rebindCart()) await runPreview(false);
+    if (followUp && (await cartStore.rebindCart())) await runPreview(false, false);
   } else if (refusal.action === 'reload-locations') {
     await loadLocations().catch(() => undefined);
-    await runPreview(false);
-  } else if (refreshesPreview(refusal)) {
+    if (followUp) await runPreview(false, false);
+  } else if (followUp && refreshesPreview(refusal, from)) {
     // A credit or blocked refusal: the preview's wouldBlock (or its own refusal) now decides
     // whether placing is offered, rather than leaving the button on for a retry that cannot pass.
-    await runPreview(false);
+    await runPreview(false, false);
   }
 }
 
-async function runPreview(clear = true) {
+async function runPreview(clear = true, followUp = true) {
   if (!cartStore.cartId || !cartStore.accountOrderAllowed) {
     preview.value = null;
     return;
@@ -132,7 +137,7 @@ async function runPreview(clear = true) {
   if (!settled.latest) return;
   if ('error' in settled) {
     preview.value = null;
-    await handleRefusal(settled.error);
+    await handleRefusal(settled.error, 'preview', followUp);
     return;
   }
   preview.value = settled.value ?? null;
@@ -175,7 +180,7 @@ async function placeOrder() {
     // The supplier removes the cart once the order is placed: start a new one for the next order.
     cartStore.forgetCart();
   } catch (error) {
-    await handleRefusal(error);
+    await handleRefusal(error, 'create');
   } finally {
     placing.value = false;
   }
@@ -188,7 +193,7 @@ onMounted(async () => {
     try {
       await loadLocations();
     } catch (error) {
-      await handleRefusal(error);
+      await handleRefusal(error, 'preview');
       return;
     }
     await runPreview();
@@ -196,6 +201,18 @@ onMounted(async () => {
     ready.value = true;
   }
 });
+
+// The cart changed (another tab, a re-bind, a load): preview it again, so what is shown is what
+// the current cart would be charged.
+watch(
+  () => [cartStore.cartId, cartStore.cart?.version] as const,
+  (next, previous) => {
+    if (!ready.value || placed.value) return;
+    // A follow-up of its own is never asked from here (no re-bind or re-preview chain), and the
+    // message on screen (a re-bind's notice, say) is kept.
+    if (next[0] !== previous[0] || next[1] !== previous[1]) void runPreview(false, false);
+  }
+);
 
 watch(
   () => form.locationId,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EldraSalesOrderList } from '@eldrajs/sdk';
-import { ORDER_PAGE_SIZE, salesStatusKey } from '~~/shared/utils/sales-orders';
+import { ORDER_PAGE_SIZE, readRefusal, salesStatusKey } from '~~/shared/utils/sales-orders';
 
 /**
  * The company's orders on account, newest first: every member of the company sees them all. Read
@@ -31,6 +31,10 @@ const { data, error } = await useFetch<EldraSalesOrderList>('/api/sales-orders',
 });
 
 const status = computed(() => error.value?.statusCode);
+// A 403 or 409 says why: choose a company, business login off, or no membership.
+const refusal = computed(() =>
+  status.value === 403 || status.value === 409 ? readRefusal(error.value) : null
+);
 const orders = computed(() => data.value?.data ?? []);
 const meta = computed(() => data.value?.meta);
 const signInHref = `/auth/login?returnTo=${encodeURIComponent('/account/orders')}`;
@@ -57,9 +61,11 @@ useSeoMeta({ title: () => t('orders'), robots: 'noindex, nofollow' });
       <a :href="signInHref" :class="button" data-testid="sales-orders-sign-in">{{ t('signIn') }}</a>
     </div>
 
-    <div v-else-if="status === 409 || status === 403" class="mt-8 grid justify-items-start gap-6">
-      <p class="text-muted">{{ t('companyRequired') }}</p>
-      <a href="/account" :class="button">{{ t('account') }}</a>
+    <div v-else-if="refusal" class="mt-8 grid justify-items-start gap-6">
+      <p class="text-muted" role="alert" data-testid="sales-orders-refusal">
+        {{ t(refusal.message) }}
+      </p>
+      <a v-if="refusal.linkToAccount" href="/account" :class="button">{{ t('account') }}</a>
     </div>
 
     <p v-else-if="error" class="text-muted mt-8" role="alert" data-testid="sales-orders-error">

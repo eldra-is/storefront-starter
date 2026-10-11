@@ -16,6 +16,7 @@ import {
   companyGoneMessage,
   createPreviewSequence,
   latestAnswer,
+  readRefusal,
   refreshesPreview,
   createOrderInput,
   idempotencyKeyOf,
@@ -226,6 +227,12 @@ describe('every sales-order and location route', () => {
       const source = readFileSync(file, 'utf8');
       const kind = file.endsWith('.post.ts') ? 'write' : 'read';
       expect(source, file).toMatch(new RegExp(`businessCall\\(event, '${kind}'`));
+      if (kind === 'write') {
+        // Another site is refused (403) before its body is read or judged.
+        const origin = source.indexOf('await requireSameOriginWrite(event)');
+        expect(origin, file).toBeGreaterThan(-1);
+        expect(origin, file).toBeLessThan(source.indexOf('readBody('));
+      }
       expect(source, file).not.toMatch(/defineCachedEventHandler|cachedFunction/);
     }
   });
@@ -371,14 +378,20 @@ describe('salesOrderRefusal', () => {
     });
   });
 
-  it('a credit or blocked refusal re-runs the preview, so it decides what may be placed', () => {
-    expect(refreshesPreview(salesOrderRefusal(problem(409, 'CUSTOMER_BLOCKED')))).toBe(true);
+  it('a credit or blocked refusal of a create re-runs the preview, so it decides what may be placed', () => {
+    const blocked = salesOrderRefusal(problem(409, 'CUSTOMER_BLOCKED'));
+    const credit = salesOrderRefusal(problem(409, 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED'));
+    expect(refreshesPreview(blocked, 'create')).toBe(true);
+    expect(refreshesPreview(credit, 'create')).toBe(true);
     expect(
-      refreshesPreview(salesOrderRefusal(problem(409, 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED')))
-    ).toBe(true);
-    expect(refreshesPreview(salesOrderRefusal(problem(502, 'SALES_ORDER_UPSTREAM_REFUSED')))).toBe(
-      false
-    );
+      refreshesPreview(salesOrderRefusal(problem(502, 'SALES_ORDER_UPSTREAM_REFUSED')), 'create')
+    ).toBe(false);
+  });
+
+  it('a refused preview never asks for another preview (a blocked customer must not loop)', () => {
+    for (const id of ['CUSTOMER_BLOCKED', 'SALES_ORDER_CREDIT_LIMIT_EXCEEDED']) {
+      expect(refreshesPreview(salesOrderRefusal(problem(409, id)), 'preview')).toBe(false);
+    }
   });
 
   it('a cart not bound to the company is re-bound by replaying its lines', () => {
@@ -706,5 +719,36 @@ describe('the preview always matches the chosen location', () => {
       })
     ).resolves.toEqual({ latest: true, error });
     expect(seq.loading).toBe(false);
+  });
+});
+
+describe('the order pages say why an order cannot be read', () => {
+  const routeError = (statusCode: number, errorId?: string) =>
+    Object.assign(new Error('FetchError'), {
+      statusCode,
+      data: { statusCode, data: errorId ? { errorId } : {} },
+    });
+
+  it('asks to choose a company only when that is the reason', () => {
+    expect(readRefusal(routeError(409, 'SHOP_CUSTOMER_REQUIRED'))).toEqual({
+      message: 'companyRequired',
+      linkToAccount: true,
+    });
+    expect(readRefusal(routeError(403, 'SHOP_CUSTOMER_NOT_MEMBER'))).toEqual({
+      message: 'companyRequired',
+      linkToAccount: true,
+    });
+  });
+
+  it('a 403 about business login or membership says so, not "choose a company"', () => {
+    expect(readRefusal(routeError(403, 'FEATURE_DISABLED'))).toEqual({
+      message: 'salesOrderUnavailable',
+      linkToAccount: false,
+    });
+    expect(readRefusal(routeError(403, 'SHOP_NO_MEMBERSHIP'))).toEqual({
+      message: 'noMembership',
+      linkToAccount: true,
+    });
+    expect(readRefusal(routeError(403))).toEqual({ message: 'ordersError', linkToAccount: false });
   });
 });

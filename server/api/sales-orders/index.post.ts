@@ -9,6 +9,7 @@ import { createOrderInput, idempotencyKeyOf } from '~~/shared/utils/sales-orders
 export default defineEventHandler(async (event) => {
   // Before anything can fail: a refusal is no more cacheable than an order.
   setResponseHeaders(event, { ...PRICED_RESPONSE_HEADERS });
+  await requireSameOriginWrite(event);
   const idempotencyKey = idempotencyKeyOf(getRequestHeader(event, 'idempotency-key'));
   const input = createOrderInput(await readBody(event).catch(() => null));
   if (!input || !idempotencyKey) {

@@ -348,10 +348,16 @@ export function companyGoneMessage(message: string, pricing: CustomerPricingStat
 /**
  * Whether a refused create should be followed by a fresh preview: after a credit or blocked
  * refusal the preview's `credit.wouldBlock` (or its own refusal) then decides whether placing is
- * offered, instead of leaving the button on for a retry that cannot pass.
+ * offered, instead of leaving the button on for a retry that cannot pass. A refused preview is
+ * never followed by another, or a blocked customer's page would ask until it is rate limited.
  */
-export function refreshesPreview(refusal: SalesOrderRefusal): boolean {
+export function refreshesPreview(
+  refusal: SalesOrderRefusal,
+  /** What was refused. Only a create asks for a preview: a refused preview never asks for another. */
+  from: 'create' | 'preview'
+): boolean {
   return (
+    from === 'create' &&
     refusal.action === 'show' &&
     (refusal.message === 'salesOrderCreditLimit' || refusal.message === 'salesOrderBlocked')
   );
@@ -399,6 +405,24 @@ export async function latestAnswer<T>(
   } catch (error) {
     return { latest: sequence.settle(token), error };
   }
+}
+
+/**
+ * Why the order history or an order cannot be read, for a 403 or 409 (401 is a sign-in, 404 not
+ * found): choose a company only when that is the reason; business login off or no membership say
+ * so instead. `linkToAccount` offers the account page, where companies are chosen.
+ */
+export function readRefusal(error: unknown): { message: string; linkToAccount: boolean } {
+  const refusal = salesOrderRefusal(error);
+  if (refusal.action === 'choose-company')
+    return { message: 'companyRequired', linkToAccount: true };
+  if (refusal.action === 'to-guest' && refusal.message === 'salesOrderUnavailable') {
+    return { message: 'salesOrderUnavailable', linkToAccount: false };
+  }
+  if (refusal.action === 'show' && refusal.message === 'noMembership') {
+    return { message: 'noMembership', linkToAccount: true };
+  }
+  return { message: 'ordersError', linkToAccount: false };
 }
 
 /** No answer, a 5xx or a rate limit: an order may have been placed (or nothing was done). */

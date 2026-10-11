@@ -239,6 +239,15 @@ export async function pricedCall<T>(
 }
 
 /**
+ * Refuses a business write from another site (403) before its body is read, so a cross-site
+ * POST is answered 403 whatever it carries. `businessCall` checks again; the check is cheap.
+ */
+export async function requireSameOriginWrite(event: H3Event): Promise<void> {
+  setResponseHeaders(event, { ...PRICED_RESPONSE_HEADERS });
+  requireSameOrigin(event, await useShopAuth(event));
+}
+
+/**
  * A sales-order or delivery-location call for this request: only as the signed-in person, always
  * for their active company (`runBusiness`); never as a guest. The active company is the stored
  * choice, else the person's only company (named from /me, so `X-Customer-Id` is always sent). Sets

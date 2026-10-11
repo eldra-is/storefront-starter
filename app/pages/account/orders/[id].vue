@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { EldraSalesOrder } from '@eldrajs/sdk';
-import { placedByLabel, salesStatusKey } from '~~/shared/utils/sales-orders';
+import { placedByLabel, readRefusal, salesStatusKey } from '~~/shared/utils/sales-orders';
 
 /**
  * One of the company's orders on account: status, delivery, and each line's ordered, delivered and
@@ -30,6 +30,10 @@ const { data: order, error } = await useFetch<EldraSalesOrder>(
 );
 
 const status = computed(() => error.value?.statusCode);
+// A 403 or 409 says why: choose a company, business login off, or no membership.
+const refusal = computed(() =>
+  status.value === 403 || status.value === 409 ? readRefusal(error.value) : null
+);
 const alreadyOrdered = computed(() => route.query.already === '1');
 const signInHref = computed(
   () => `/auth/login?returnTo=${encodeURIComponent(`/account/orders/${id.value}`)}`
@@ -76,9 +80,11 @@ useSeoMeta({
       {{ t('orderNotFound') }}
     </p>
 
-    <div v-else-if="status === 409 || status === 403" class="mt-8 grid justify-items-start gap-6">
-      <p class="text-muted">{{ t('companyRequired') }}</p>
-      <a href="/account" :class="button">{{ t('account') }}</a>
+    <div v-else-if="refusal" class="mt-8 grid justify-items-start gap-6">
+      <p class="text-muted" role="alert" data-testid="sales-orders-refusal">
+        {{ t(refusal.message) }}
+      </p>
+      <a v-if="refusal.linkToAccount" href="/account" :class="button">{{ t('account') }}</a>
     </div>
 
     <p v-else-if="error || !order" class="text-muted mt-8" role="alert">{{ t('ordersError') }}</p>
