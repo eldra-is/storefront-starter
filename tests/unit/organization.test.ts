@@ -4,6 +4,7 @@ import {
   clearOrganizationCache,
   dropOrganizationCache,
   loadOrganizationSettings,
+  loginUiLocale,
   pickLocale,
   toOrganizationSettings,
 } from '../../app/utils/organization';
@@ -79,6 +80,28 @@ describe('toOrganizationSettings', () => {
 describe('pickLocale', () => {
   it('keeps a current locale the organization offers', () => {
     expect(pickLocale('is-IS', FALLBACK_ORGANIZATION)).toBe('is-IS');
+  });
+});
+
+describe('loginUiLocale', () => {
+  it('sends the cookie language as a bare tag', () => {
+    const both = toOrganizationSettings(
+      { features: commerceOn },
+      { availableLocales: ['en-US', 'is-IS'], defaultLocale: 'is-IS' }
+    );
+    expect(loginUiLocale('is-IS', both)).toBe('is');
+    expect(loginUiLocale('en-US', both)).toBe('en');
+  });
+
+  it('falls back to the organization default for no, an unknown or an unoffered cookie', () => {
+    const isOnly = toOrganizationSettings(
+      { features: commerceOn },
+      { availableLocales: ['is-IS'], defaultLocale: 'is-IS' }
+    );
+    expect(loginUiLocale(undefined, isOnly)).toBe('is');
+    expect(loginUiLocale('de-DE', isOnly)).toBe('is');
+    expect(loginUiLocale('en-US', isOnly)).toBe('is');
+    expect(loginUiLocale(undefined, FALLBACK_ORGANIZATION)).toBe('en');
   });
 });
 

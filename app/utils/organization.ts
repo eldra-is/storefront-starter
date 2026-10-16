@@ -87,6 +87,20 @@ export function pickLocale(current: string, settings: OrganizationSettings): Loc
     : settings.defaultLocale;
 }
 
+/**
+ * The language the shop login pages should use, as the OIDC `ui_locales` tag (`is-IS` → `is`,
+ * `en-US` → `en`): the locale cookie when the organization offers it, else its default, the same
+ * rule the pages follow.
+ */
+export function loginUiLocale(
+  cookie: unknown,
+  settings: Pick<OrganizationSettings, 'locales' | 'defaultLocale'>
+): string {
+  const locale =
+    isShippedLocale(cookie) && settings.locales.includes(cookie) ? cookie : settings.defaultLocale;
+  return locale.split('-')[0] ?? locale;
+}
+
 // Process-level: each organization is read again five minutes after the last read, so a feature
 // switched in Studio (B2B, commerce) reaches the storefront without a restart; a failed read is retried.
 export const ORGANIZATION_CACHE_TTL_MS = 5 * 60 * 1000;

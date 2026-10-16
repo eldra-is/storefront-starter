@@ -29,6 +29,8 @@ export async function useShopAuth(event: H3Event) {
     orgId: organization.id,
     /** The key the organization is cached under, for `dropOrganizationCache`. */
     orgKey: String(config.public.eldraOrgId),
+    /** The organization's languages, for the login pages' `ui_locales`. */
+    locales: { locales: organization.locales, defaultLocale: organization.defaultLocale },
     issuer,
     clientId: String(config.shopClientId || ''),
     clientSecret,
