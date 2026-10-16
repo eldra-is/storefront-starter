@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { EldraSalesOrder } from '@eldrajs/sdk';
+import type { EldraSalesOrder, EldraSalesOrderLine } from '@eldrajs/sdk';
 import { placedByLabel, readRefusal, salesStatusKey } from '~~/shared/utils/sales-orders';
 
 /**
- * One of the company's orders on account: status, delivery, and each line's ordered, delivered and
- * backordered quantity with what is in stock now. "Order again" adds the lines to the cart at the
+ * One of the company's orders on account: status, delivery, and each line's ordered and delivered
+ * quantity, what is left to deliver (ordered − delivered, the gateway's `backorder`; set-aside units
+ * included) and what is in stock now. "Order again" adds the lines to the cart at the
  * quantities ordered, priced at today's terms. Read on the server, never cached.
  */
 const { t } = useLocale();
@@ -38,6 +39,12 @@ const alreadyOrdered = computed(() => route.query.already === '1');
 const signInHref = computed(
   () => `/auth/login?returnTo=${encodeURIComponent(`/account/orders/${id.value}`)}`
 );
+
+/** What the hidden narrow-screen columns say, as one line under the item. */
+function narrowLineFacts(line: EldraSalesOrderLine): string {
+  const delivered = `${t('delivered')}: ${line.quantityDelivered}`;
+  return line.backorder > 0 ? `${delivered} · ${t('inStockNow')}: ${line.inStockNow}` : delivered;
+}
 
 const reordering = ref(false);
 const reorderMessage = ref('');
@@ -146,9 +153,13 @@ useSeoMeta({
             <tr class="border-ink border-b text-[11px] tracking-[0.14em] uppercase">
               <th class="py-3 pr-4 font-normal">{{ t('item') }}</th>
               <th class="py-3 pr-4 text-right font-normal">{{ t('ordered') }}</th>
-              <th class="py-3 pr-4 text-right font-normal">{{ t('delivered') }}</th>
-              <th class="py-3 pr-4 text-right font-normal">{{ t('backorder') }}</th>
-              <th class="py-3 pr-4 text-right font-normal">{{ t('inStockNow') }}</th>
+              <th class="py-3 pr-4 text-right font-normal max-[700px]:hidden">
+                {{ t('delivered') }}
+              </th>
+              <th class="py-3 pr-4 text-right font-normal">{{ t('leftToDeliver') }}</th>
+              <th class="py-3 pr-4 text-right font-normal max-[700px]:hidden">
+                {{ t('inStockNow') }}
+              </th>
               <th class="py-3 text-right font-normal">{{ t('total') }}</th>
             </tr>
           </thead>
@@ -162,12 +173,22 @@ useSeoMeta({
               <td class="py-4 pr-4">
                 <span class="text-xs tracking-[0.06em] uppercase">{{ line.title }}</span>
                 <span class="text-muted block text-xs">{{ line.sku }}</span>
+                <!-- Below 700 px the delivered and in-stock columns move under the item. -->
+                <span class="text-muted block text-xs min-[700px]:hidden">{{
+                  narrowLineFacts(line)
+                }}</span>
               </td>
               <td class="py-4 pr-4 text-right">{{ line.quantity }}</td>
-              <td class="py-4 pr-4 text-right">{{ line.quantityDelivered }}</td>
-              <td class="py-4 pr-4 text-right">{{ line.backorder }}</td>
-              <td class="py-4 pr-4 text-right">{{ line.backorder > 0 ? line.inStockNow : '—' }}</td>
-              <td class="py-4 text-right">{{ price(line.finalPrice, order.currency) }}</td>
+              <td class="py-4 pr-4 text-right max-[700px]:hidden">{{ line.quantityDelivered }}</td>
+              <td class="py-4 pr-4 text-right" data-testid="sales-order-line-left">
+                {{ line.backorder }}
+              </td>
+              <td class="py-4 pr-4 text-right max-[700px]:hidden">
+                {{ line.backorder > 0 ? line.inStockNow : '—' }}
+              </td>
+              <td class="py-4 text-right whitespace-nowrap">
+                {{ price(line.finalPrice, order.currency) }}
+              </td>
             </tr>
           </tbody>
         </table>

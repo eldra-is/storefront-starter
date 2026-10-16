@@ -84,7 +84,7 @@ useSeoMeta({ title: () => t('orders'), robots: 'noindex, nofollow' });
             <th class="py-3 pr-4 font-normal">{{ t('placedAt') }}</th>
             <th class="py-3 pr-4 font-normal max-[700px]:hidden">{{ t('purchaseOrderNumber') }}</th>
             <th class="py-3 pr-4 font-normal">{{ t('status') }}</th>
-            <th class="py-3 pr-4 font-normal max-[700px]:hidden">{{ t('backorder') }}</th>
+            <th class="py-3 pr-4 font-normal max-[700px]:hidden">{{ t('leftToDeliver') }}</th>
             <th class="py-3 text-right font-normal">{{ t('total') }}</th>
           </tr>
         </thead>
