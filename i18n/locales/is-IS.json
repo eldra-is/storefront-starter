@@ -82,6 +82,8 @@
   "orderNote": "Athugasemd",
   "orderNoteHint": "Starfsfólk okkar og allir sem kaupa fyrir fyrirtækið þitt sjá hana.",
   "paymentTerm": "Greiðsluskilmálar",
+  "paymentTermDaysOne": "{count} dags greiðslufrestur",
+  "paymentTermDaysOther": "{count} daga greiðslufrestur",
   "deliverTo": "Afhendist til",
   "placeOrder": "Staðfesta pöntun",
   "placingOrder": "Sendi pöntun…",

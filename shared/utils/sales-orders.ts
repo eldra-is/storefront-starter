@@ -553,6 +553,26 @@ export function placedByLabel(name: string | null | undefined): string {
   return value;
 }
 
+/**
+ * The order's payment term: the accounting system's own label when it has one, else the
+ * customer's days ("30 daga greiðslufrestur"), else null (the page shows "—"). Icelandic takes
+ * the singular for 1, 21, 31… but not 11.
+ */
+export function paymentTermText(
+  terms: { paymentTermLabel?: string | null; paymentTermDays?: number | null },
+  t: (key: string, params: Record<string, number>) => string,
+  locale: string
+): string | null {
+  const label = terms.paymentTermLabel?.trim();
+  if (label) return label;
+  const days = terms.paymentTermDays;
+  if (typeof days !== 'number' || !Number.isFinite(days) || days < 0) return null;
+  const one = locale.toLowerCase().startsWith('is')
+    ? days % 10 === 1 && days % 100 !== 11
+    : days === 1;
+  return t(one ? 'paymentTermDaysOne' : 'paymentTermDaysOther', { count: days });
+}
+
 /** The i18n key of a sales status. */
 export function salesStatusKey(status: string | null | undefined): string {
   switch (status) {

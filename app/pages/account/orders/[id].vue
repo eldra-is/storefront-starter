@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { EldraSalesOrder, EldraSalesOrderLine } from '@eldrajs/sdk';
-import { placedByLabel, readRefusal, salesStatusKey } from '~~/shared/utils/sales-orders';
+import {
+  paymentTermText,
+  placedByLabel,
+  readRefusal,
+  salesStatusKey,
+} from '~~/shared/utils/sales-orders';
 
 /**
  * One of the company's orders on account: status, delivery, and each line's ordered and delivered
@@ -8,7 +13,7 @@ import { placedByLabel, readRefusal, salesStatusKey } from '~~/shared/utils/sale
  * included) and what is in stock now. "Order again" adds the lines to the cart at the
  * quantities ordered, priced at today's terms. Read on the server, never cached.
  */
-const { t } = useLocale();
+const { t, locale } = useLocale();
 const price = usePrice();
 const formatDate = useOrderDate();
 const route = useRoute();
@@ -132,7 +137,7 @@ useSeoMeta({
         </div>
         <div>
           <dt class="text-muted">{{ t('paymentTerm') }}</dt>
-          <dd>{{ order.paymentTermLabel || '—' }}</dd>
+          <dd>{{ paymentTermText(order, t, locale) ?? '—' }}</dd>
         </div>
         <div>
           <dt class="text-muted">{{ t('deliverTo') }}</dt>

@@ -9,6 +9,7 @@ import {
   createPreviewSequence,
   latestAnswer,
   refreshesPreview,
+  paymentTermText,
   salesOrderRefusal,
   type CheckoutForm,
 } from '~~/shared/utils/sales-orders';
@@ -19,7 +20,7 @@ import {
  * check come from the server's preview (the cart page shows the prices stored when each line was
  * added; the order is priced at the company's current terms).
  */
-const { t } = useLocale();
+const { t, locale } = useLocale();
 const price = usePrice();
 const businessLogin = useBusinessLogin();
 const pricing = useCustomerPricing();
@@ -427,7 +428,7 @@ useSeoMeta({ title: () => t('orderOnAccount'), robots: 'noindex, nofollow' });
               <div class="flex justify-between gap-4 py-2.5 text-sm">
                 <dt>{{ t('paymentTerm') }}</dt>
                 <dd data-testid="sales-order-payment-term">
-                  {{ preview.paymentTermLabel || '—' }}
+                  {{ paymentTermText(preview, t, locale) ?? '—' }}
                 </dd>
               </div>
             </dl>

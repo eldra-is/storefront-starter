@@ -82,6 +82,8 @@
   "orderNote": "Note",
   "orderNoteHint": "Seen by our staff and by everyone who buys for your company.",
   "paymentTerm": "Payment terms",
+  "paymentTermDaysOne": "{count} day",
+  "paymentTermDaysOther": "{count} days",
   "deliverTo": "Deliver to",
   "placeOrder": "Place order",
   "placingOrder": "Placing order",

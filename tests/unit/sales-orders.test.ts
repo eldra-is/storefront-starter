@@ -4,6 +4,7 @@ import { EldraHttpError } from '@eldrajs/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import type { PricedCaller } from '../../shared/utils/customer-prices';
 import {
+  paymentTermText,
   CHECKOUT_ATTEMPT_KEY,
   NOTE_MAX_LENGTH,
   ORDER_PAGE_SIZE,
@@ -760,5 +761,32 @@ describe('the order pages say why an order cannot be read', () => {
       linkToAccount: true,
     });
     expect(readRefusal(routeError(403))).toEqual({ message: 'ordersError', linkToAccount: false });
+  });
+});
+
+describe('paymentTermText', () => {
+  const t = (key: string, params: Record<string, number>) => `${key}:${params.count}`;
+
+  it("shows the accounting system's own label when there is one", () => {
+    expect(
+      paymentTermText({ paymentTermLabel: ' 20 daga ', paymentTermDays: 30 }, t, 'is-IS')
+    ).toBe('20 daga');
+  });
+
+  it('falls back to the days, with the Icelandic singular for 1, 21 and 31 but not 11', () => {
+    expect(paymentTermText({ paymentTermLabel: '', paymentTermDays: 30 }, t, 'is-IS')).toBe(
+      'paymentTermDaysOther:30'
+    );
+    expect(paymentTermText({ paymentTermDays: 21 }, t, 'is-IS')).toBe('paymentTermDaysOne:21');
+    expect(paymentTermText({ paymentTermDays: 11 }, t, 'is-IS')).toBe('paymentTermDaysOther:11');
+    expect(paymentTermText({ paymentTermDays: 21 }, t, 'en-US')).toBe('paymentTermDaysOther:21');
+    expect(paymentTermText({ paymentTermDays: 1 }, t, 'en-US')).toBe('paymentTermDaysOne:1');
+  });
+
+  it('is null when the order has neither', () => {
+    expect(
+      paymentTermText({ paymentTermLabel: null, paymentTermDays: null }, t, 'is-IS')
+    ).toBeNull();
+    expect(paymentTermText({}, t, 'en-US')).toBeNull();
   });
 });
